@@ -63,6 +63,28 @@ jobs:
           rm -rf Pods
           pod install --repo-update
 
+      - name: Remove broken Pods aggregate framework from xcconfig
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          for path in Path(".").rglob("*.xcconfig"):
+              text = path.read_text(errors="ignore")
+              old = text
+
+              text = re.sub(r'\s-framework\s+"?Pods_Sir[^"\s]*"?', '', text)
+              text = text.replace('Pods_Sir_Philip_Korea________', '')
+
+              if text != old:
+                  path.write_text(text)
+                  print(f"Fixed {path}")
+
+          print("Remaining Pods_Sir references:")
+          import os
+          os.system('grep -R "Pods_Sir" . || true')
+          PY
+
       - name: Configure signing only for app target
         run: |
           ruby <<'RUBY'
