@@ -11,18 +11,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show project files
+      - name: Fix bundle id and signing
         run: |
-          ls -la
-          ls -la "Sir Philip Korea 써필립 코리아.xcodeproj"
-          ls -la "Sir Philip Korea 써필립 코리아.xcworkspace"
+          /usr/bin/perl -pi -e 's/PRODUCT_BUNDLE_IDENTIFIER = \*\*\*\*;/PRODUCT_BUNDLE_IDENTIFIER = com.sirphilipkorea.app;/g' "Sir Philip Korea 써필립 코리아.xcodeproj/project.pbxproj"
+          /usr/bin/perl -pi -e 's/DEVELOPMENT_TEAM = .*?;/DEVELOPMENT_TEAM = BA9RRCP43W;/g' "Sir Philip Korea 써필립 코리아.xcodeproj/project.pbxproj"
 
       - name: Install CocoaPods
         run: |
           sudo gem install cocoapods
           pod install
 
-      - name: Create App Store Connect API key file
+      - name: Create API key
         run: |
           mkdir -p ~/private_keys
           echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
@@ -36,9 +35,10 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "build/SirPhilipKorea.xcarchive" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            PRODUCT_BUNDLE_IDENTIFIER="${{ secrets.APP_BUNDLE_ID }}" \
+            DEVELOPMENT_TEAM="BA9RRCP43W" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.sirphilipkorea.app" \
             CODE_SIGN_STYLE="Automatic" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
             -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
@@ -54,13 +54,11 @@ jobs:
             <key>method</key>
             <string>app-store-connect</string>
             <key>teamID</key>
-            <string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <string>BA9RRCP43W</string>
             <key>signingStyle</key>
             <string>automatic</string>
             <key>stripSwiftSymbols</key>
             <true/>
-            <key>uploadBitcode</key>
-            <false/>
             <key>uploadSymbols</key>
             <true/>
           </dict>
