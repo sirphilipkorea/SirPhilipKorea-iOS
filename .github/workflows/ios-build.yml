@@ -65,11 +65,31 @@ jobs:
                 s['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
                 s['PROVISIONING_PROFILE_SPECIFIER'] = profile_name
 
-                if s['OTHER_LDFLAGS']
-                  flags = s['OTHER_LDFLAGS']
-                  flags = flags.map { |x| x.to_s }.reject { |x| x.include?('Pods_Sir') }
-                  s['OTHER_LDFLAGS'] = flags
+              if s['OTHER_LDFLAGS']
+                flags = s['OTHER_LDFLAGS']
+                flags = flags.map { |x| x.to_s }
+              
+                cleaned = []
+                skip_next = false
+              
+                flags.each_with_index do |flag, i|
+                  if skip_next
+                    skip_next = false
+                    next
+                  end
+              
+                  if flag == '-framework' && flags[i + 1].to_s.include?('Pods_Sir')
+                    skip_next = true
+                    next
+                  end
+              
+                  next if flag.include?('Pods_Sir')
+              
+                  cleaned << flag
                 end
+              
+                s['OTHER_LDFLAGS'] = cleaned
+              end
               else
                 s['CODE_SIGNING_ALLOWED'] = 'NO'
                 s['CODE_SIGNING_REQUIRED'] = 'NO'
