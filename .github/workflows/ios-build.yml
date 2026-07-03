@@ -38,12 +38,11 @@ jobs:
             DEVELOPMENT_TEAM="BA9RRCP43W" \
             PRODUCT_BUNDLE_IDENTIFIER="com.sirphilipkorea.app" \
             CODE_SIGN_STYLE="Automatic" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
             -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
-
+            
       - name: Create export options
         run: |
           cat > ExportOptions.plist <<EOF
