@@ -21,6 +21,11 @@ jobs:
           sudo gem install cocoapods
           pod install
 
+      - name: Disable code signing for Pods
+        run: |
+          find Pods -name "project.pbxproj" -print0 | xargs -0 perl -pi -e 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g'
+          find Pods -name "project.pbxproj" -print0 | xargs -0 perl -pi -e 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g'
+
       - name: Create API key
         run: |
           mkdir -p ~/private_keys
@@ -38,11 +43,12 @@ jobs:
             DEVELOPMENT_TEAM="BA9RRCP43W" \
             PRODUCT_BUNDLE_IDENTIFIER="com.sirphilipkorea.app" \
             CODE_SIGN_STYLE="Automatic" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
             -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
-            
+
       - name: Create export options
         run: |
           cat > ExportOptions.plist <<EOF
@@ -56,10 +62,6 @@ jobs:
             <string>BA9RRCP43W</string>
             <key>signingStyle</key>
             <string>automatic</string>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>uploadSymbols</key>
-            <true/>
           </dict>
           </plist>
           EOF
