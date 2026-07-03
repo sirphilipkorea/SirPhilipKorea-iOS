@@ -62,6 +62,32 @@ jobs:
           pod deintegrate || true
           rm -rf Pods
           pod install --repo-update
+      
+      - name: Remove invalid Pods framework references
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+      
+          pbx = next(Path(".").rglob("project.pbxproj"))
+      
+          txt = pbx.read_text(errors="ignore")
+          old = txt
+      
+          # Framework Search Paths
+          txt = re.sub(r'.*Pods_Sir_Philip_Korea.*\n', '', txt)
+      
+          # Framework references
+          txt = re.sub(r'.*Pods_Sir_Philip_Korea________\.framework.*\n', '', txt)
+      
+          # Linker flags
+          txt = re.sub(r'-framework "?Pods_Sir_Philip_Korea[^"]*"?', '', txt)
+      
+          pbx.write_text(txt)
+      
+          print("project.pbxproj cleaned")
+          PY
+
 
       - name: Remove broken Pods aggregate framework from xcconfig
         run: |
