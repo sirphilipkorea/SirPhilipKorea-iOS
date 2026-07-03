@@ -11,20 +11,77 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fix bundle id and signing
-        run: |
-          /usr/bin/perl -pi -e 's/PRODUCT_BUNDLE_IDENTIFIER = \*\*\*\*;/PRODUCT_BUNDLE_IDENTIFIER = com.sirphilipkorea.app;/g' "Sir Philip Korea 써필립 코리아.xcodeproj/project.pbxproj"
-          /usr/bin/perl -pi -e 's/DEVELOPMENT_TEAM = .*?;/DEVELOPMENT_TEAM = BA9RRCP43W;/g' "Sir Philip Korea 써필립 코리아.xcodeproj/project.pbxproj"
-
-      - name: Install CocoaPods
+      - name: Install CocoaPods and xcodeproj
         run: |
           sudo gem install cocoapods
+          sudo gem install xcodeproj
+
+      - name: Install pods
+        run: |
           pod install
 
-      - name: Disable code signing for Pods
+      - name: Fix signing settings
         run: |
-          find Pods -name "project.pbxproj" -print0 | xargs -0 perl -pi -e 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g'
-          find Pods -name "project.pbxproj" -print0 | xargs -0 perl -pi -e 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g'
+          ruby <<'RUBY'
+          require 'xcodeproj'
+
+          team_id = 'BA9RRCP43W'
+          bundle_id = 'com.sirphilipkorea.app'
+          app_target_name = 'Sir Philip Korea 써필립 코리아'
+
+          main_project_path = 'Sir Philip Korea 써필립 코리아.xcodeproj'
+          main_project = Xcodeproj::Project.open(main_project_path)
+
+          main_project.targets.each do |target|
+            target.build_configurations.each do |config|
+              settings = config.build_settings
+
+              if target.name == app_target_name
+                settings['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
+                settings['DEVELOPMENT_TEAM'] = team_id
+                settings['CODE_SIGN_STYLE'] = 'Automatic'
+                settings['CODE_SIGNING_ALLOWED'] = 'YES'
+                settings['CODE_SIGNING_REQUIRED'] = 'YES'
+                settings['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+                settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
+                settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+                settings['PROVISIONING_PROFILE'] = ''
+              else
+                settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                settings['CODE_SIGN_IDENTITY'] = ''
+                settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = ''
+                settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+                settings['DEVELOPMENT_TEAM'] = ''
+                settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+                settings['PROVISIONING_PROFILE'] = ''
+              end
+            end
+          end
+
+          main_project.save
+
+          pods_project_path = 'Pods/Pods.xcodeproj'
+          if File.exist?(pods_project_path)
+            pods_project = Xcodeproj::Project.open(pods_project_path)
+
+            pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                settings = config.build_settings
+                settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                settings['CODE_SIGN_IDENTITY'] = ''
+                settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = ''
+                settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+                settings['DEVELOPMENT_TEAM'] = ''
+                settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+                settings['PROVISIONING_PROFILE'] = ''
+              end
+            end
+
+            pods_project.save
+          end
+          RUBY
 
       - name: Create API key
         run: |
@@ -40,10 +97,6 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "build/SirPhilipKorea.xcarchive" \
-            DEVELOPMENT_TEAM="BA9RRCP43W" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.sirphilipkorea.app" \
-            CODE_SIGN_STYLE="Automatic" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
             -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
@@ -62,6 +115,10 @@ jobs:
             <string>BA9RRCP43W</string>
             <key>signingStyle</key>
             <string>automatic</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>uploadSymbols</key>
+            <true/>
           </dict>
           </plist>
           EOF
