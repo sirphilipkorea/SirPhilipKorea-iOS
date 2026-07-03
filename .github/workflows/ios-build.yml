@@ -123,6 +123,27 @@ jobs:
           end
           RUBY
 
+      - name: Force remove broken Pods framework references
+        run: |
+          ruby <<'RUBY'
+          files = Dir.glob("**/*.{pbxproj,xcconfig}", File::FNM_DOTMATCH)
+
+          files.each do |file|
+            text = File.read(file)
+
+            text.gsub!(/"-framework",\s*"Pods_Sir[^"]*",?/, "")
+            text.gsub!(/-framework\s+"Pods_Sir[^"]+"/, "")
+            text.gsub!(/-framework\s+Pods_Sir[^\s;"]+/, "")
+            text.gsub!(/Pods_Sir_Philip_Korea[_A-Za-z0-9]*/, "")
+
+            File.write(file, text)
+          end
+
+          puts "Remaining Pods_Sir references:"
+          system("grep -R \"Pods_Sir\" . || true")
+          RUBY
+    
+
       - name: Build archive
         run: |
           xcodebuild archive \
