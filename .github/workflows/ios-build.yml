@@ -14,12 +14,12 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
-      - name: Install CocoaPods
+      - name: Install tools
         run: |
-          sudo gem install cocoapods
+          sudo gem install cocoapods xcodeproj
           pod repo update
 
-      - name: Install Certificate
+      - name: Install certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -40,37 +40,95 @@ jobs:
             -f pkcs12 \
             -k "$KEYCHAIN_PATH"
 
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
 
-      - name: Install Provisioning Profile
+      - name: Install provisioning profile
         env:
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
 
-          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode \
-          > ~/Library/MobileDevice/Provisioning\ Profiles/SirPhilipKorea.mobileprovision
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision"))
+          cp "$RUNNER_TEMP/profile.mobileprovision" ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
 
-      - name: Install Pods
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $GITHUB_ENV
+          echo "Installed profile UUID: $PROFILE_UUID"
+
+      - name: Clean and install pods
         run: |
           pod deintegrate || true
           rm -rf Pods
           pod install --repo-update
 
-      - name: Build Archive
+      - name: Configure signing only for app target
+        run: |
+          ruby <<'RUBY'
+          require 'xcodeproj'
+
+          project_path = 'Sir Philip Korea 써필립 코리아.xcodeproj'
+          app_target_name = 'Sir Philip Korea 써필립 코리아'
+          team_id = ENV['APPLE_TEAM_ID']
+          bundle_id = ENV['APP_BUNDLE_ID']
+          profile_name = 'SirPhilipKorea_AppStore_Profile'
+
+          project = Xcodeproj::Project.open(project_path)
+
+          project.targets.each do |target|
+            target.build_configurations.each do |config|
+              s = config.build_settings
+
+              if target.name == app_target_name
+                s['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
+                s['DEVELOPMENT_TEAM'] = team_id
+                s['CODE_SIGN_STYLE'] = 'Manual'
+                s['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+                s['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
+                s['PROVISIONING_PROFILE_SPECIFIER'] = profile_name
+              else
+                s['CODE_SIGNING_ALLOWED'] = 'NO'
+                s['CODE_SIGNING_REQUIRED'] = 'NO'
+                s.delete('CODE_SIGN_IDENTITY')
+                s.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
+                s.delete('PROVISIONING_PROFILE_SPECIFIER')
+                s.delete('PROVISIONING_PROFILE')
+              end
+            end
+          end
+
+          project.save
+
+          pods_path = 'Pods/Pods.xcodeproj'
+          if File.exist?(pods_path)
+            pods = Xcodeproj::Project.open(pods_path)
+            pods.targets.each do |target|
+              target.build_configurations.each do |config|
+                s = config.build_settings
+                s['CODE_SIGNING_ALLOWED'] = 'NO'
+                s['CODE_SIGNING_REQUIRED'] = 'NO'
+                s.delete('CODE_SIGN_IDENTITY')
+                s.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
+                s.delete('PROVISIONING_PROFILE_SPECIFIER')
+                s.delete('PROVISIONING_PROFILE')
+              end
+            end
+            pods.save
+          end
+          RUBY
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+
+      - name: Build archive
         run: |
           xcodebuild archive \
             -workspace "Sir Philip Korea 써필립 코리아.xcworkspace" \
             -scheme "Sir Philip Korea 써필립 코리아" \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath build/SirPhilipKorea.xcarchive \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            PRODUCT_BUNDLE_IDENTIFIER="${{ secrets.APP_BUNDLE_ID }}" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="SirPhilipKorea_AppStore_Profile"
+            -archivePath build/SirPhilipKorea.xcarchive
 
       - name: Create ExportOptions.plist
         run: |
