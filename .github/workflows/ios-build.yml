@@ -121,6 +121,51 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
 
+      - name: Remove broken Pods wrapper framework from app target
+        run: |
+          ruby <<'RUBY'
+          require 'xcodeproj'
+
+          project_path = 'Sir Philip Korea 써필립 코리아.xcodeproj'
+          app_target_name = 'Sir Philip Korea 써필립 코리아'
+
+          project = Xcodeproj::Project.open(project_path)
+
+          project.targets.each do |target|
+            next unless target.name == app_target_name
+
+            target.build_configurations.each do |config|
+              flags = config.build_settings['OTHER_LDFLAGS']
+              next unless flags
+
+              flags = flags.map(&:to_s)
+
+              cleaned = []
+              skip_next = false
+
+              flags.each_with_index do |flag, i|
+                if skip_next
+                  skip_next = false
+                  next
+                end
+
+                if flag == '-framework' && flags[i + 1].to_s.start_with?('Pods_')
+                  skip_next = true
+                  next
+                end
+
+                next if flag.start_with?('Pods_')
+
+                cleaned << flag
+              end
+
+              config.build_settings['OTHER_LDFLAGS'] = cleaned
+            end
+          end
+
+          project.save
+          RUBY
+
       - name: Build archive
         run: |
           xcodebuild archive \
