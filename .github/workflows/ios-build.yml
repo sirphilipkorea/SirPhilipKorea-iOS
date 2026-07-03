@@ -8,25 +8,47 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install CocoaPods and xcodeproj
+      - name: Install tools
         run: |
           sudo gem install cocoapods
           sudo gem install xcodeproj
+
+      - name: Install certificate and profile
+        run: |
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+          PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo "${{ secrets.BUILD_CERTIFICATE_BASE64 }}" | base64 --decode > $CERT_PATH
+          echo "${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}" | base64 --decode > $PROFILE_PATH
+
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          security import $CERT_PATH -P "${{ secrets.P12_PASSWORD }}" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/SirPhilipKorea.mobileprovision
+
+      - name: Install pods
+        run: |
+          pod deintegrate || true
           pod install
 
-      - name: Fix signing settings
+      - name: Fix project signing and Pods link issue
         run: |
           ruby <<'RUBY'
           require 'xcodeproj'
 
+          project_path = 'Sir Philip Korea 써필립 코리아.xcodeproj'
+          app_target_name = 'Sir Philip Korea 써필립 코리아'
           team_id = 'BA9RRCP43W'
           bundle_id = 'com.sirphilipkorea.app'
-          app_target_name = 'Sir Philip Korea 써필립 코리아'
+          profile_name = 'SirPhilipKorea_AppStore_Profile'
 
-          project_path = 'Sir Philip Korea 써필립 코리아.xcodeproj'
           project = Xcodeproj::Project.open(project_path)
 
           project.targets.each do |target|
@@ -36,21 +58,26 @@ jobs:
               if target.name == app_target_name
                 s['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
                 s['DEVELOPMENT_TEAM'] = team_id
-                s['CODE_SIGN_STYLE'] = 'Automatic'
+                s['CODE_SIGN_STYLE'] = 'Manual'
                 s['CODE_SIGNING_ALLOWED'] = 'YES'
                 s['CODE_SIGNING_REQUIRED'] = 'YES'
-                s.delete('CODE_SIGN_IDENTITY')
-                s.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
-                s.delete('PROVISIONING_PROFILE')
-                s.delete('PROVISIONING_PROFILE_SPECIFIER')
+                s['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+                s['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
+                s['PROVISIONING_PROFILE_SPECIFIER'] = profile_name
+
+                if s['OTHER_LDFLAGS']
+                  flags = s['OTHER_LDFLAGS']
+                  flags = flags.map { |x| x.to_s }.reject { |x| x.include?('Pods_Sir') }
+                  s['OTHER_LDFLAGS'] = flags
+                end
               else
                 s['CODE_SIGNING_ALLOWED'] = 'NO'
                 s['CODE_SIGNING_REQUIRED'] = 'NO'
                 s.delete('CODE_SIGN_IDENTITY')
                 s.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
                 s.delete('DEVELOPMENT_TEAM')
-                s.delete('PROVISIONING_PROFILE')
                 s.delete('PROVISIONING_PROFILE_SPECIFIER')
+                s.delete('PROVISIONING_PROFILE')
               end
             end
           end
@@ -68,19 +95,13 @@ jobs:
                 s.delete('CODE_SIGN_IDENTITY')
                 s.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
                 s.delete('DEVELOPMENT_TEAM')
-                s.delete('PROVISIONING_PROFILE')
                 s.delete('PROVISIONING_PROFILE_SPECIFIER')
+                s.delete('PROVISIONING_PROFILE')
               end
             end
             pods.save
           end
           RUBY
-
-      - name: Create API key
-        run: |
-          mkdir -p ~/private_keys
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
-          chmod 600 ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
 
       - name: Build archive
         run: |
@@ -89,14 +110,7 @@ jobs:
             -scheme "Sir Philip Korea 써필립 코리아" \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath "build/SirPhilipKorea.xcarchive" \
-            DEVELOPMENT_TEAM="BA9RRCP43W" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.sirphilipkorea.app" \
-            CODE_SIGN_STYLE="Automatic" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
-            -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            -authenticationKeyIssuerID "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+            -archivePath "build/SirPhilipKorea.xcarchive"
 
       - name: Create export options
         run: |
@@ -110,7 +124,12 @@ jobs:
             <key>teamID</key>
             <string>BA9RRCP43W</string>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.sirphilipkorea.app</key>
+              <string>SirPhilipKorea_AppStore_Profile</string>
+            </dict>
           </dict>
           </plist>
           EOF
@@ -120,17 +139,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "build/SirPhilipKorea.xcarchive" \
             -exportPath "build/export" \
-            -exportOptionsPlist ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8 \
-            -authenticationKeyID "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            -authenticationKeyIssuerID "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
-
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SirPhilipKorea-IPA
-          path: build/export/*.ipa
+            -exportOptionsPlist ExportOptions.plist
 
       - name: Upload to TestFlight
         run: |
