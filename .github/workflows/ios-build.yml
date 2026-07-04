@@ -220,7 +220,12 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" build/profile.plist || true
 
           echo "=== AVAILABLE IDENTITIES ==="
-          security find-identity -v -p codesigning
+          security find-identity -v -p codesigning          echo "=== PROFILE DETAILS ==="
+          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print ProvisionsAllDevices" build/profile.plist || true
+
+          
 
 
       - name: Upload to TestFlight
