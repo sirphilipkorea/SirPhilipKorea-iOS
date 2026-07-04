@@ -43,6 +43,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
+          
+          CERT_SHA1=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '/Apple Distribution/ {print $2; exit}')
+          echo "CERT_SHA1=$CERT_SHA1" >> $GITHUB_ENV
+          echo "Signing cert SHA1: $CERT_SHA1"
+          
 
       - name: Install provisioning profile
         env:
@@ -289,7 +294,3 @@ jobs:
           uses-non-exempt-encryption: 'false'
           wait-for-processing: 'false'
           backend: AppStoreAPI
-
-          CERT_SHA1=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '/Apple Distribution/ {print $2; exit}')
-          echo "CERT_SHA1=$CERT_SHA1" >> $GITHUB_ENV
-          echo "Signing cert SHA1: $CERT_SHA1"
