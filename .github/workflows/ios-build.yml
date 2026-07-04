@@ -231,7 +231,7 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="${{ secrets.APP_BUNDLE_ID }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE="$PROFILE_UUID"
+            PROVISIONING_PROFILE_SPECIFIER="SirPhilipKorea_AppStore_Profile"
             
       - name: Create ExportOptions.plist
         run: |
@@ -251,7 +251,7 @@ jobs:
             <key>provisioningProfiles</key>
             <dict>
               <key>${{ secrets.APP_BUNDLE_ID }}</key>
-              <string>$PROFILE_UUID</string>
+              <string>SirPhilipKorea_AppStore_Profile</string>
             </dict>
           </dict>
           </plist>
