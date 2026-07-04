@@ -368,7 +368,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Sir Philip Korea 써필립 코리아/Entitlements/Entitlements.plist";
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = BA9RRCP43W;
 				INFOPLIST_FILE = "Sir Philip Korea 써필립 코리아/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -377,7 +377,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1;
-				CURRENT_PROJECT_VERSION = 2
+				CURRENT_PROJECT_VERSION = 2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sirphilipkorea.app";
 				PRODUCT_NAME = "SirPhilipKorea써필립코리아";
 				PROVISIONING_PROFILE_SPECIFIER = "SirPhilipKorea_AppStore_Profile";
@@ -397,7 +397,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Sir Philip Korea 써필립 코리아/Entitlements/Entitlements.plist";
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 2
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = BA9RRCP43W;
 				INFOPLIST_FILE = "Sir Philip Korea 써필립 코리아/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -406,7 +406,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1;
-				CURRENT_PROJECT_VERSION = 2
+				CURRENT_PROJECT_VERSION = 2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sirphilipkorea.app";
 				PRODUCT_NAME = "SirPhilipKorea써필립코리아";
 				PROVISIONING_PROFILE_SPECIFIER = "SirPhilipKorea_AppStore_Profile";
