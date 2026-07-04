@@ -280,12 +280,12 @@ jobs:
         env:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          mkdir -p private_keys
-          echo "$APP_STORE_CONNECT_API_KEY" > private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$APP_STORE_CONNECT_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
 
-          xcrun altool \
-            --upload-app \
-            --type ios \
-            --file build/export/*.ipa \
-            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+          xcrun iTMSTransporter \
+            -m upload \
+            -assetFile build/export/*.ipa \
+            -apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
+            -apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
+            -v informational
