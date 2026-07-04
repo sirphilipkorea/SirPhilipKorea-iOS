@@ -277,15 +277,12 @@ jobs:
 
 
       - name: Upload to TestFlight
-        env:
-          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-        run: |
-          mkdir -p ~/.appstoreconnect/private_keys
-          echo "$APP_STORE_CONNECT_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
-
-          xcrun iTMSTransporter \
-            -m upload \
-            -assetFile build/export/*.ipa \
-            -apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            -apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}" \
-            -v informational
+        uses: apple-actions/upload-testflight-build@v5.2.1
+        with:
+          app-path: build/export/SirPhilipKorea써필립코리아.ipa
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          uses-non-exempt-encryption: 'false'
+          wait-for-processing: 'true'
+          backend: AppStoreAPI
