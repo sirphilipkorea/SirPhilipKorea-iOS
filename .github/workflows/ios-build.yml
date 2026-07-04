@@ -194,6 +194,12 @@ jobs:
           echo "=== APP ENTITLEMENTS ==="
           codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
 
+          echo "=== PROFILE DETAILS ==="
+          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print ProvisionsAllDevices" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print Platform" build/profile.plist || true          
+
       - name: Upload to TestFlight
         uses: apple-actions/upload-testflight-build@v5.2.1
         with:
