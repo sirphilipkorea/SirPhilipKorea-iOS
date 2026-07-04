@@ -1,0 +1,19 @@
+Sir Philip Korea iOS cleanup package
+
+Changed:
+1. Podfile uses static linkage for Firebase Messaging.
+2. GitHub Actions workflow reinstalls Pods cleanly with pod deintegrate + pod install.
+3. Build number CURRENT_PROJECT_VERSION is set to 5.
+4. Entitlements.plist contains only iOS-relevant entitlements.
+5. Workflow exports IPA to build/SirPhilipKorea.ipa to avoid Korean filename path issues.
+
+Upload these files/folders back to GitHub on the main branch, replacing the existing files.
+Required GitHub Secrets remain:
+- APPLE_TEAM_ID
+- APP_BUNDLE_ID
+- BUILD_CERTIFICATE_BASE64
+- BUILD_PROVISION_PROFILE_BASE64
+- P12_PASSWORD
+- APP_STORE_CONNECT_API_KEY
+- APP_STORE_CONNECT_API_KEY_ID
+- APP_STORE_CONNECT_ISSUER_ID

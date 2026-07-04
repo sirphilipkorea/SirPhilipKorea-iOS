@@ -17,7 +17,7 @@ jobs:
       - name: Install CocoaPods
         run: |
           sudo gem install cocoapods
-          pod repo update
+          pod --version
 
       - name: Install Apple Distribution certificate
         env:
@@ -56,8 +56,9 @@ jobs:
 
           echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
 
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist")
 
           cp "$PROFILE_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
 
@@ -67,37 +68,59 @@ jobs:
 
       - name: Install Pods
         run: |
-          rm -rf Pods
+          rm -rf Pods Podfile.lock
           pod install --repo-update
 
-      - name: Remove broken Pods linker flag
+      - name: Remove CocoaPods aggregate linker residue
         run: |
           python3 <<'PY'
           from pathlib import Path
           import re
 
-          pbx = next(Path(".").rglob("project.pbxproj"))
-          text = pbx.read_text(errors="ignore")
+          files = list(Path('.').rglob('*.xcconfig')) + list(Path('.').rglob('project.pbxproj'))
+          target_pattern = r'Pods_Sir_Philip_Korea_+'
 
-          text = re.sub(r'"-framework",\s*"Pods_Sir_Philip_Korea________",?', '', text)
-          text = re.sub(r'-framework\s+"?Pods_Sir_Philip_Korea________"?', '', text)
-          text = text.replace('Pods_Sir_Philip_Korea________', '')
+          for path in files:
+              text = path.read_text(errors='ignore')
+              old = text
 
-          pbx.write_text(text)
+              # Remove array-style pairs in project.pbxproj: "-framework", "Pods_Sir..."
+              text = re.sub(r'\s*"-framework",\s*\n\s*"' + target_pattern + r'",?\s*\n', '\n', text)
 
-          print("Remaining Pods_Sir references:")
+              # Remove inline linker flags in xcconfig/pbxproj: -framework "Pods_Sir..."
+              text = re.sub(r'\s*-framework\s+"?' + target_pattern + r'"?', '', text)
+
+              # Remove any leftover line that only points to the broken aggregate framework.
+              kept = []
+              for line in text.splitlines(True):
+                  if re.search(target_pattern, line):
+                      # If a mixed OTHER_LDFLAGS line survived, keep after cleanup; otherwise drop.
+                      if 'OTHER_LDFLAGS' in line and not re.search(target_pattern, line):
+                          kept.append(line)
+                      # Drop stale framework-search or framework-reference lines.
+                  else:
+                      kept.append(line)
+              text = ''.join(kept)
+
+              if text != old:
+                  path.write_text(text)
+                  print(f'Cleaned {path}')
+
+          print('=== Remaining Pods_Sir references ===')
           import os
           os.system('grep -R "Pods_Sir" . || true')
           PY
 
       - name: Build archive
         run: |
-          xcodebuild archive \
+          rm -rf ~/Library/Developer/Xcode/DerivedData
+          xcodebuild clean archive \
             -workspace "Sir Philip Korea 써필립 코리아.xcworkspace" \
             -scheme "Sir Philip Korea 써필립 코리아" \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath build/SirPhilipKorea.xcarchive
+            -archivePath build/SirPhilipKorea.xcarchive \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
       - name: Create ExportOptions.plist
         run: |
@@ -121,10 +144,10 @@ jobs:
             </dict>
             <key>stripSwiftSymbols</key>
             <true/>
-            <key>uploadBitcode</key>
-            <false/>
             <key>uploadSymbols</key>
             <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
           </dict>
           </plist>
           EOF
@@ -136,9 +159,20 @@ jobs:
             -exportPath build/export \
             -exportOptionsPlist ExportOptions.plist
 
+      - name: Find IPA
+        run: |
+          IPA_PATH=$(find build/export -name "*.ipa" -type f | head -n 1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "No IPA found"
+            exit 1
+          fi
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+          echo "IPA path: $IPA_PATH"
+
       - name: Verify IPA signature
         run: |
-          unzip -q build/export/*.ipa -d build/ipa_check
+          rm -rf build/ipa_check
+          unzip -q "$IPA_PATH" -d build/ipa_check
           APP_PATH=$(find build/ipa_check/Payload -name "*.app" -type d | head -n 1)
 
           echo "=== APP PATH ==="
@@ -160,13 +194,10 @@ jobs:
           echo "=== APP ENTITLEMENTS ==="
           codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
 
-          echo "=== AVAILABLE IDENTITIES ==="
-          security find-identity -v -p codesigning
-
       - name: Upload to TestFlight
         uses: apple-actions/upload-testflight-build@v5.2.1
         with:
-          app-path: build/export/SirPhilipKorea써필립코리아.ipa
+          app-path: ${{ env.IPA_PATH }}
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
