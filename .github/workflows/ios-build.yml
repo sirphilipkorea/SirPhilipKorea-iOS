@@ -70,6 +70,26 @@ jobs:
           rm -rf Pods
           pod install --repo-update
 
+      - name: Remove broken Pods linker flag
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          pbx = next(Path(".").rglob("project.pbxproj"))
+          text = pbx.read_text(errors="ignore")
+
+          text = re.sub(r'"-framework",\s*"Pods_Sir_Philip_Korea________",?', '', text)
+          text = re.sub(r'-framework\s+"?Pods_Sir_Philip_Korea________"?', '', text)
+          text = text.replace('Pods_Sir_Philip_Korea________', '')
+
+          pbx.write_text(text)
+
+          print("Remaining Pods_Sir references:")
+          import os
+          os.system('grep -R "Pods_Sir" . || true')
+          PY
+
       - name: Build archive
         run: |
           xcodebuild archive \
