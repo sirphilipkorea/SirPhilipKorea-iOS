@@ -256,6 +256,26 @@ jobs:
             -exportPath build/export \
             -exportOptionsPlist ExportOptions.plist
 
+      - name: Verify IPA signature
+        run: |
+          unzip -q build/export/*.ipa -d build/ipa_check
+          APP_PATH=$(find build/ipa_check/Payload -name "*.app" -type d | head -n 1)
+
+          echo "=== APP PATH ==="
+          echo "$APP_PATH"
+
+          echo "=== CODESIGN INFO ==="
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 || true
+
+          echo "=== EMBEDDED PROFILE ==="
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > build/profile.plist
+          /usr/libexec/PlistBuddy -c "Print Name" build/profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" build/profile.plist || true
+
+          echo "=== AVAILABLE IDENTITIES ==="
+          security find-identity -v -p codesigning
+
+
       - name: Upload to TestFlight
         env:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
