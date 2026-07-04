@@ -297,7 +297,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = "$(ARCHS_STANDARD)";
 			};
 			name = Debug;
@@ -353,7 +353,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 				VALID_ARCHS = "$(ARCHS_STANDARD)";
 			};
@@ -367,8 +367,9 @@
 				CLANG_ENABLE_MODULES = NO;
 				CODE_SIGN_ENTITLEMENTS = "Sir Philip Korea 써필립 코리아/Entitlements/Entitlements.plist";
 				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_IDENTITY[sdk=iphoneos*] = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BA9RRCP43W;
 				INFOPLIST_FILE = "Sir Philip Korea 써필립 코리아/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -377,14 +378,14 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sirphilipkorea.app";
 				PRODUCT_NAME = "SirPhilipKorea써필립코리아";
 				PROVISIONING_PROFILE_SPECIFIER = "SirPhilipKorea_AppStore_Profile";
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -396,8 +397,9 @@
 				CLANG_ENABLE_MODULES = NO;
 				CODE_SIGN_ENTITLEMENTS = "Sir Philip Korea 써필립 코리아/Entitlements/Entitlements.plist";
 				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_IDENTITY[sdk=iphoneos*] = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BA9RRCP43W;
 				INFOPLIST_FILE = "Sir Philip Korea 써필립 코리아/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -406,14 +408,14 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sirphilipkorea.app";
 				PRODUCT_NAME = "SirPhilipKorea써필립코리아";
 				PROVISIONING_PROFILE_SPECIFIER = "SirPhilipKorea_AppStore_Profile";
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
