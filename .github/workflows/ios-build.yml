@@ -33,6 +33,14 @@ jobs:
           xcodebuild -showsdks
           ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms || true
           ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs || true
+
+
+      - name: Install iOS 26 Platform
+        run: |
+          sudo xcodebuild -license accept || true
+          sudo xcodebuild -runFirstLaunch || true
+          xcodebuild -downloadPlatform iOS
+          xcodebuild -showsdks
           
       - name: Install tools
         run: |
