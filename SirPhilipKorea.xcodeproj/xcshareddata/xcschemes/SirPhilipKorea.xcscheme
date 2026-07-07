@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CD89F888237E9D9200C436A1"
-               BuildableName = "SirPhilipKorea써필립코리아.app"
-               BlueprintName = "Sir Philip Korea 써필립 코리아"
-               ReferencedContainer = "container:Sir Philip Korea 써필립 코리아.xcodeproj">
+               BuildableName = "SirPhilipKorea.app"
+               BlueprintName = "SirPhilipKorea"
+               ReferencedContainer = "container:SirPhilipKorea.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CD89F888237E9D9200C436A1"
-            BuildableName = "SirPhilipKorea써필립코리아.app"
-            BlueprintName = "Sir Philip Korea 써필립 코리아"
-            ReferencedContainer = "container:Sir Philip Korea 써필립 코리아.xcodeproj">
+            BuildableName = "SirPhilipKorea.app"
+            BlueprintName = "SirPhilipKorea"
+            ReferencedContainer = "container:SirPhilipKorea.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CD89F888237E9D9200C436A1"
-            BuildableName = "SirPhilipKorea써필립코리아.app"
-            BlueprintName = "Sir Philip Korea 써필립 코리아"
-            ReferencedContainer = "container:Sir Philip Korea 써필립 코리아.xcodeproj">
+            BuildableName = "SirPhilipKorea.app"
+            BlueprintName = "SirPhilipKorea"
+            ReferencedContainer = "container:SirPhilipKorea.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

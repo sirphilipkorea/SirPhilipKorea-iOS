@@ -67,16 +67,16 @@ func parseSubscribeMessage(message: WKScriptMessage) -> [SubscribeMessage] {
 func returnPermissionResult(isGranted: Bool){
     DispatchQueue.main.async(execute: {
         if (isGranted){
-            SirPhilipKorea써필립코리아.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-request', { detail: 'granted' }))")
+            SirPhilipKorea.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-request', { detail: 'granted' }))")
         }
         else {
-            SirPhilipKorea써필립코리아.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-request', { detail: 'denied' }))")
+            SirPhilipKorea.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-request', { detail: 'denied' }))")
         }
     })
 }
 func returnPermissionState(state: String){
     DispatchQueue.main.async(execute: {
-        SirPhilipKorea써필립코리아.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-state', { detail: '\(state)' }))")
+        SirPhilipKorea.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('push-permission-state', { detail: '\(state)' }))")
     })
 }
 
@@ -134,9 +134,9 @@ func handlePushState() {
 }
 
 func checkViewAndEvaluate(event: String, detail: String) {
-    if (!SirPhilipKorea써필립코리아.webView.isHidden && !SirPhilipKorea써필립코리아.webView.isLoading ) {
+    if (!SirPhilipKorea.webView.isHidden && !SirPhilipKorea.webView.isLoading ) {
         DispatchQueue.main.async(execute: {
-            SirPhilipKorea써필립코리아.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('\(event)', { detail: \(detail) }))")
+            SirPhilipKorea.webView.evaluateJavaScript("this.dispatchEvent(new CustomEvent('\(event)', { detail: \(detail) }))")
         })
     }
     else {

@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Sir Philip Korea 써필립 코리아</string>
+	<string>SirPhilipKorea</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -99,9 +99,6 @@
 	<key>WKAppBoundDomains</key>
 	<array>
 		<string>sirphilipkorea.com</string>
-<string>account.google.com</string>
-<string>login.microsoft.com</string>
-<string>appleid.apple.com</string>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
