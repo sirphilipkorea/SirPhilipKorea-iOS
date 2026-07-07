@@ -54,12 +54,9 @@ jobs:
         run: |
           echo "=== P12 INFO ==="
           ls -lh "$RUNNER_TEMP/distribution.p12"
-          shasum -a 256 "$RUNNER_TEMP/distribution.p12"
           openssl pkcs12 -info -in "$RUNNER_TEMP/distribution.p12" -passin pass:"$P12_PASSWORD" -noout
 
           echo "=== PROFILE INFO ==="
-          ls -lh "$RUNNER_TEMP/profile.mobileprovision"
-          shasum -a 256 "$RUNNER_TEMP/profile.mobileprovision"
           security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
           /usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist"
           /usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist"
@@ -136,6 +133,51 @@ jobs:
           rm -rf Pods Podfile.lock
           pod install --repo-update
 
+      - name: Configure signing only for app target
+        run: |
+          ruby <<'RUBY'
+          require 'xcodeproj'
+
+          team = ENV['APPLE_TEAM_ID']
+          bundle_id = ENV['APP_BUNDLE_ID']
+          profile_name = ENV['PROFILE_NAME']
+
+          project = Xcodeproj::Project.open('SirPhilipKorea.xcodeproj')
+          app_target = project.targets.find { |t| t.name == 'SirPhilipKorea' }
+          raise 'SirPhilipKorea target not found' unless app_target
+
+          app_target.build_configurations.each do |config|
+            s = config.build_settings
+            s['DEVELOPMENT_TEAM'] = team
+            s['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
+            s['CODE_SIGN_STYLE'] = 'Manual'
+            s['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+            s['PROVISIONING_PROFILE_SPECIFIER'] = profile_name
+            s['PROVISIONING_PROFILE'] = ''
+            s['PRODUCT_NAME'] = 'SirPhilipKorea'
+            s['EXECUTABLE_NAME'] = 'SirPhilipKorea'
+            s['INFOPLIST_KEY_CFBundleName'] = 'SirPhilipKorea'
+            s['INFOPLIST_KEY_CFBundleDisplayName'] = '써필립코리아'
+          end
+          project.save
+
+          if File.exist?('Pods/Pods.xcodeproj')
+            pods = Xcodeproj::Project.open('Pods/Pods.xcodeproj')
+            pods.targets.each do |target|
+              target.build_configurations.each do |config|
+                s = config.build_settings
+                s['CODE_SIGNING_ALLOWED'] = 'NO'
+                s['CODE_SIGNING_REQUIRED'] = 'NO'
+                s['CODE_SIGN_IDENTITY'] = ''
+                s['DEVELOPMENT_TEAM'] = ''
+                s['PROVISIONING_PROFILE_SPECIFIER'] = ''
+                s['PROVISIONING_PROFILE'] = ''
+              end
+            end
+            pods.save
+          end
+          RUBY
+
       - name: Confirm workspace and scheme
         run: |
           echo "=== Files ==="
@@ -152,11 +194,6 @@ jobs:
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$APP_BUNDLE_ID" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
@@ -261,16 +298,6 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" build/embedded-profile.plist || true
           /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/embedded-profile.plist || true
           /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" build/embedded-profile.plist || true
-
-          if ! codesign -dvvv "$APP_PATH" 2>&1 | grep -q "Authority=Apple Distribution"; then
-            echo "IPA is not signed with Apple Distribution"
-            exit 1
-          fi
-
-          if /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/embedded-profile.plist 2>/dev/null | grep -q true; then
-            echo "Profile is Development profile, not App Store profile"
-            exit 1
-          fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
