@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
 
     env:
       WORKSPACE: SirPhilipKorea.xcworkspace
@@ -20,15 +20,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      - name: List installed Xcodes
+        run: |
+          ls -la /Applications | grep Xcode
+          xcodebuild -version
+
       - name: Select Xcode
         run: |
-          if [ -d "/Applications/Xcode_16.4.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.4.app
+          if [ -d "/Applications/Xcode_26.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          elif [ -d "/Applications/Xcode_26.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.app
           else
             sudo xcode-select -s /Applications/Xcode.app
           fi
           xcodebuild -version
-
+          
       - name: Install tools
         run: |
           sudo gem install cocoapods xcodeproj
