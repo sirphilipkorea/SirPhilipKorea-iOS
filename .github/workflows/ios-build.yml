@@ -31,6 +31,8 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
           xcodebuild -version
           xcodebuild -showsdks
+          ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms || true
+          ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs || true
           
       - name: Install tools
         run: |
