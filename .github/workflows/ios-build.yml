@@ -1,4 +1,4 @@
-name: iOS TestFlight Build
+name: Build iOS & Upload TestFlight
 
 on:
   workflow_dispatch:
@@ -8,13 +8,13 @@ jobs:
     runs-on: macos-15
 
     env:
-      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
-      WORKSPACE: "Sir Philip Korea 써필립 코리아.xcworkspace"
-      SCHEME: "Sir Philip Korea 써필립 코리아"
+      WORKSPACE: SirPhilipKorea.xcworkspace
+      SCHEME: SirPhilipKorea
       CONFIGURATION: Release
       ARCHIVE_PATH: build/SirPhilipKorea.xcarchive
       EXPORT_PATH: build/export
+      APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
     steps:
       - name: Checkout
@@ -22,14 +22,17 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app || sudo xcode-select -s /Applications/Xcode.app
+          if [ -d "/Applications/Xcode_16.4.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app
+          else
+            sudo xcode-select -s /Applications/Xcode.app
+          fi
           xcodebuild -version
 
-      - name: Install CocoaPods
+      - name: Install tools
         run: |
-          sudo gem install cocoapods
+          sudo gem install cocoapods xcodeproj
           pod --version
-          pod install --repo-update
 
       - name: Decode signing files
         env:
@@ -45,101 +48,119 @@ jobs:
           printf "%s" "$APP_STORE_CONNECT_API_KEY" > ~/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
           chmod 600 ~/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
 
+      - name: Verify decoded signing files
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          echo "=== P12 INFO ==="
+          ls -lh "$RUNNER_TEMP/distribution.p12"
+          shasum -a 256 "$RUNNER_TEMP/distribution.p12"
+          openssl pkcs12 -info -in "$RUNNER_TEMP/distribution.p12" -passin pass:"$P12_PASSWORD" -noout
+
+          echo "=== PROFILE INFO ==="
+          ls -lh "$RUNNER_TEMP/profile.mobileprovision"
+          shasum -a 256 "$RUNNER_TEMP/profile.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -c "Print TeamIdentifier:0" "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" "$RUNNER_TEMP/profile.plist" || true
+          /usr/libexec/PlistBuddy -c "Print Entitlements:aps-environment" "$RUNNER_TEMP/profile.plist" || true
+
+      - name: Convert p12 to macOS compatible format
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          openssl pkcs12 \
+            -in "$RUNNER_TEMP/distribution.p12" \
+            -passin pass:"$P12_PASSWORD" \
+            -nodes \
+            -out "$RUNNER_TEMP/cert_and_key.pem"
+
+          openssl pkcs12 \
+            -export \
+            -in "$RUNNER_TEMP/cert_and_key.pem" \
+            -out "$RUNNER_TEMP/distribution_legacy.p12" \
+            -passout pass:"$P12_PASSWORD" \
+            -keypbe PBE-SHA1-3DES \
+            -certpbe PBE-SHA1-3DES \
+            -macalg sha1
+
       - name: Install certificate
         env:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
           security create-keychain -p "" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
 
-          security import "$RUNNER_TEMP/distribution.p12" \
-            -k "$KEYCHAIN_PATH" \
+          security import "$RUNNER_TEMP/distribution_legacy.p12" \
             -P "$P12_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security \
-            -T /usr/bin/xcodebuild
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
 
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "" \
-            "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN_PATH"
 
-          echo "=== Available code signing identities ==="
+          echo "=== AVAILABLE IDENTITIES ==="
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          CERT_SHA1=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '/Apple Distribution/ {print $2; exit}')
+          if [ -z "$CERT_SHA1" ]; then
+            echo "Apple Distribution identity not found"
+            exit 1
+          fi
+          echo "CERT_SHA1=$CERT_SHA1" >> "$GITHUB_ENV"
+          echo "Signing cert SHA1: $CERT_SHA1"
 
       - name: Install provisioning profile
         run: |
-          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
-          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
-
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist")
-          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c "Print TeamIdentifier:0" "$RUNNER_TEMP/profile.plist")
-          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" "$RUNNER_TEMP/profile.plist")
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp "$PROFILE_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
-
+          cp "$RUNNER_TEMP/profile.mobileprovision" ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "Installed profile UUID: $PROFILE_UUID"
+          echo "Installed profile Name: $PROFILE_NAME"
 
-          echo "=== Installed provisioning profile ==="
-          echo "Name: $PROFILE_NAME"
-          echo "UUID: $PROFILE_UUID"
-          echo "Team: $PROFILE_TEAM"
-          echo "App ID: $PROFILE_APP_ID"
-          /usr/libexec/PlistBuddy -c "Print Entitlements:aps-environment" "$RUNNER_TEMP/profile.plist" || true
-          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" "$RUNNER_TEMP/profile.plist" || true
-          /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" "$RUNNER_TEMP/profile.plist" && exit 1 || true
-
-      - name: Clean CocoaPods stale linker references
+      - name: Install Pods
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
+          rm -rf Pods Podfile.lock
+          pod install --repo-update
 
-          pattern = r'Pods_Sir_Philip_Korea_+'
-          paths = list(Path('.').rglob('*.xcconfig')) + list(Path('.').rglob('project.pbxproj'))
-
-          for path in paths:
-              text = path.read_text(errors='ignore')
-              old = text
-              text = re.sub(r'\s*"-framework",\s*\n\s*"' + pattern + r'",?\s*\n', '\n', text)
-              text = re.sub(r'\s*-framework\s+"?' + pattern + r'"?', '', text)
-              lines = []
-              for line in text.splitlines(True):
-                  if re.search(pattern, line):
-                      continue
-                  lines.append(line)
-              text = ''.join(lines)
-              if text != old:
-                  path.write_text(text)
-                  print(f'Cleaned {path}')
-          PY
-
-      - name: Archive with explicit App Store signing
+      - name: Confirm workspace and scheme
         run: |
-          rm -rf build "$HOME/Library/Developer/Xcode/DerivedData"
+          echo "=== Files ==="
+          ls -la
+          echo "=== Schemes ==="
+          xcodebuild -list -workspace "$WORKSPACE"
 
+      - name: Archive
+        run: |
+          rm -rf build ~/Library/Developer/Xcode/DerivedData
           xcodebuild clean archive \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$APP_BUNDLE_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
-      - name: Verify archive signature before export
+      - name: Verify archive signature
         run: |
           APP_PATH=$(find "$ARCHIVE_PATH/Products/Applications" -name "*.app" -type d | head -n 1)
           echo "=== ARCHIVE APP PATH ==="
@@ -147,12 +168,13 @@ jobs:
           echo "=== ARCHIVE CODESIGN INFO ==="
           codesign -dvvv "$APP_PATH" 2>&1
           echo "=== ARCHIVE ENTITLEMENTS ==="
-          codesign -d --entitlements :- "$APP_PATH" 2>/dev/null
-          echo "=== ARCHIVE EMBEDDED PROFILE ==="
-          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/archive-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/archive-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" "$RUNNER_TEMP/archive-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" "$RUNNER_TEMP/archive-embedded.plist" || true
+          codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
+          echo "=== ARCHIVE STRICT VERIFY ==="
+          codesign --verify --strict --verbose=6 "$APP_PATH"
+          if ! codesign -dvvv "$APP_PATH" 2>&1 | grep -q "Authority=Apple Distribution"; then
+            echo "Archive is not signed with Apple Distribution"
+            exit 1
+          fi
 
       - name: Create ExportOptions.plist
         run: |
@@ -170,11 +192,11 @@ jobs:
             <key>signingCertificate</key>
             <string>Apple Distribution</string>
             <key>teamID</key>
-            <string>${TEAM_ID}</string>
+            <string>$APPLE_TEAM_ID</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>${BUNDLE_ID}</key>
-              <string>${PROFILE_NAME}</string>
+              <key>$APP_BUNDLE_ID</key>
+              <string>$PROFILE_NAME</string>
             </dict>
             <key>stripSwiftSymbols</key>
             <true/>
@@ -189,6 +211,7 @@ jobs:
 
       - name: Export IPA
         run: |
+          rm -rf "$EXPORT_PATH"
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
@@ -199,54 +222,70 @@ jobs:
             echo "No IPA found"
             exit 1
           fi
-          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
-          echo "IPA path: $IPA_PATH"
 
-      - name: Verify IPA signature after export
+          FINAL_IPA="$EXPORT_PATH/SirPhilipKorea.ipa"
+          if [ "$IPA_PATH" != "$FINAL_IPA" ]; then
+            mv "$IPA_PATH" "$FINAL_IPA"
+          fi
+          echo "IPA_PATH=$FINAL_IPA" >> "$GITHUB_ENV"
+          echo "IPA path: $FINAL_IPA"
+
+      - name: Verify IPA signature
         run: |
           rm -rf build/ipa_check
           mkdir -p build/ipa_check
-          unzip -q "$IPA_PATH" -d build/ipa_check
+          ditto -x -k "$IPA_PATH" build/ipa_check
           APP_PATH=$(find build/ipa_check/Payload -name "*.app" -type d | head -n 1)
 
           echo "=== IPA APP PATH ==="
           echo "$APP_PATH"
+          if echo "$APP_PATH" | grep -q "써필립\|써"; then
+            echo "ERROR: IPA app bundle path still contains Korean text"
+            exit 1
+          fi
+
           echo "=== IPA CODESIGN INFO ==="
           codesign -dvvv "$APP_PATH" 2>&1
           echo "=== IPA ENTITLEMENTS ==="
-          codesign -d --entitlements :- "$APP_PATH" 2>/dev/null
-          echo "=== IPA EMBEDDED PROFILE ==="
-          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/ipa-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/ipa-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" "$RUNNER_TEMP/ipa-embedded.plist"
-          /usr/libexec/PlistBuddy -c "Print Entitlements:aps-environment" "$RUNNER_TEMP/ipa-embedded.plist" || true
-          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" "$RUNNER_TEMP/ipa-embedded.plist" || true
+          codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
+          echo "=== IPA STRICT VERIFY ==="
+          codesign --verify --strict --verbose=6 "$APP_PATH"
+          echo "=== IPA DEEP STRICT VERIFY ==="
+          codesign --verify --strict --deep --verbose=6 "$APP_PATH"
 
-      - name: Validate IPA with Apple
-        run: |
-          xcrun altool --validate-app \
-            --type ios \
-            --file "$IPA_PATH" \
-            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+          echo "=== EMBEDDED PROFILE ==="
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > build/embedded-profile.plist
+          /usr/libexec/PlistBuddy -c "Print Name" build/embedded-profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print UUID" build/embedded-profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print TeamIdentifier:0" build/embedded-profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" build/embedded-profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/embedded-profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" build/embedded-profile.plist || true
 
-          echo "=== PROFILE DETAILS ==="
-          /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/profile.plist || true
-          /usr/libexec/PlistBuddy -c "Print ProvisionedDevices" build/profile.plist || true
-          /usr/libexec/PlistBuddy -c "Print ProvisionsAllDevices" build/profile.plist || true
-          /usr/libexec/PlistBuddy -c "Print Platform" build/profile.plist || true          
+          if ! codesign -dvvv "$APP_PATH" 2>&1 | grep -q "Authority=Apple Distribution"; then
+            echo "IPA is not signed with Apple Distribution"
+            exit 1
+          fi
 
-      - name: Upload to TestFlight
-        run: |
-          xcrun altool --upload-app \
-            --type ios \
-            --file "$IPA_PATH" \
-            --apiKey "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" \
-            --apiIssuer "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
+          if /usr/libexec/PlistBuddy -c "Print Entitlements:get-task-allow" build/embedded-profile.plist 2>/dev/null | grep -q true; then
+            echo "Profile is Development profile, not App Store profile"
+            exit 1
+          fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SirPhilipKorea-IPA
+          name: IPA
           path: build/export/*.ipa
+
+      - name: Upload to TestFlight
+        uses: apple-actions/upload-testflight-build@v5.2.1
+        with:
+          app-path: build/export/SirPhilipKorea.ipa
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          uses-non-exempt-encryption: 'false'
+          wait-for-processing: 'false'
+          backend: AppStoreAPI
