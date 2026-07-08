@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
 
     env:
       WORKSPACE: SirPhilipKorea.xcworkspace
@@ -26,20 +26,36 @@ jobs:
           ls -la /Applications | grep Xcode
           xcodebuild -version
 
-      - name: Select Xcode
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.0.1.app
-          xcodebuild -version
-          xcodebuild -showsdks
-          ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms || true
-          ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs || true
-
-
-      - name: Accept Xcode license and initialize
+      - name: Select Xcode with iOS SDK
         run: |
           sudo xcodebuild -license accept || true
+
+          if [ -d /Applications/Xcode_16.4.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app
+          else
+            SELECTED_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | while read XCODE_APP; do
+              if ls "$XCODE_APP/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs"/iPhoneOS*.sdk >/dev/null 2>&1; then
+                echo "$XCODE_APP"
+                break
+              fi
+            done)
+
+            if [ -z "$SELECTED_XCODE" ]; then
+              echo "No installed Xcode with iPhoneOS SDK was found."
+              ls -la /Applications | grep Xcode || true
+              exit 1
+            fi
+
+            sudo xcode-select -s "$SELECTED_XCODE"
+          fi
+
           sudo xcodebuild -runFirstLaunch || true
+          echo "=== SELECTED XCODE ==="
+          xcodebuild -version
+          echo "=== AVAILABLE SDKS ==="
           xcodebuild -showsdks
+          echo "=== IPHONEOS SDKS ==="
+          ls -la "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs"
 
       - name: Install tools
         run: |
