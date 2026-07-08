@@ -106,7 +106,17 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
     // redirect new tabs to main webview
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if (navigationAction.targetFrame == nil) {
-            webView.load(navigationAction.request)
+            if let requestUrl = navigationAction.request.url,
+               let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
+               let queryItems = components.queryItems,
+               queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" }) {
+                var cleanComponents = components
+                cleanComponents.queryItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+                let safariUrl = cleanComponents.url ?? requestUrl
+                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+            } else {
+                webView.load(navigationAction.request)
+            }
         }
         return nil
     }
@@ -117,6 +127,20 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         }
         if (navigationAction.shouldPerformDownload || navigationAction.request.url?.scheme == "blob") {
             return decisionHandler(.download)
+        }
+
+        // SPK v5.0: Let the web app request that a page be opened in the real Safari app.
+        // This is used for printable recipe pages because WKWebView does not reliably support window.print().
+        if let requestUrl = navigationAction.request.url,
+           let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
+           let queryItems = components.queryItems,
+           queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" }) {
+            var cleanComponents = components
+            cleanComponents.queryItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+            let safariUrl = cleanComponents.url ?? requestUrl
+            decisionHandler(.cancel)
+            UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+            return
         }
 
         if let requestUrl = navigationAction.request.url{
