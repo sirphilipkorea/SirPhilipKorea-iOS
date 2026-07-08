@@ -108,12 +108,19 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         if (navigationAction.targetFrame == nil) {
             if let requestUrl = navigationAction.request.url,
                let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
-               let queryItems = components.queryItems,
-               queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" }) {
-                var cleanComponents = components
-                cleanComponents.queryItems = queryItems.filter { $0.name != "spk_app_open_safari" }
-                let safariUrl = cleanComponents.url ?? requestUrl
-                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+               let queryItems = components.queryItems {
+                let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
+                let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+
+                if isSPKPrintPage || asksForSafari {
+                    var cleanComponents = components
+                    let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+                    cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
+                    let safariUrl = cleanComponents.url ?? requestUrl
+                    UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+                } else {
+                    webView.load(navigationAction.request)
+                }
             } else {
                 webView.load(navigationAction.request)
             }
@@ -129,18 +136,23 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return decisionHandler(.download)
         }
 
-        // SPK v5.0: Let the web app request that a page be opened in the real Safari app.
-        // This is used for printable recipe pages because WKWebView does not reliably support window.print().
+        // SPK v5.1: Open SPK printable recipe pages in the real Safari app.
+        // WKWebView does not reliably support window.print(), so printable recipe pages must leave the app.
         if let requestUrl = navigationAction.request.url,
            let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
-           let queryItems = components.queryItems,
-           queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" }) {
-            var cleanComponents = components
-            cleanComponents.queryItems = queryItems.filter { $0.name != "spk_app_open_safari" }
-            let safariUrl = cleanComponents.url ?? requestUrl
-            decisionHandler(.cancel)
-            UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
-            return
+           let queryItems = components.queryItems {
+            let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
+            let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+
+            if isSPKPrintPage || asksForSafari {
+                var cleanComponents = components
+                let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+                cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
+                let safariUrl = cleanComponents.url ?? requestUrl
+                decisionHandler(.cancel)
+                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+                return
+            }
         }
 
         if let requestUrl = navigationAction.request.url{
