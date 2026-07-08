@@ -35,13 +35,12 @@ jobs:
           ls -la /Applications/Xcode_26.0.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs || true
 
 
-      - name: Install iOS 26 Platform
+      - name: Accept Xcode license and initialize
         run: |
           sudo xcodebuild -license accept || true
           sudo xcodebuild -runFirstLaunch || true
-          xcodebuild -downloadPlatform iOS
           xcodebuild -showsdks
-          
+
       - name: Install tools
         run: |
           sudo gem install cocoapods xcodeproj
