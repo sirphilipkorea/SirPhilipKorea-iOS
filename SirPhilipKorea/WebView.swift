@@ -5,6 +5,34 @@ import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
 
+// SPK v5.5: Detect CodeMShop SimplePay / KG Inicis payment URLs and open them in the real Safari app.
+// iOS WKWebView can lose the payment session or redirect to the home page during payment security redirects.
+private func spkShouldOpenPaymentInSafari(_ url: URL) -> Bool {
+    let absolute = url.absoluteString.lowercased()
+    let host = (url.host ?? "").lowercased()
+    let path = url.path.lowercased()
+
+    if host.contains("inicis") || host.contains("inipay") || host.contains("kcp") || host.contains("kspay") || host.contains("bankpay") {
+        return true
+    }
+
+    if absolute.contains("payment_form") || absolute.contains("transaction_id=tinicis") || absolute.contains("inistdpay") || absolute.contains("inicis") || absolute.contains("inipay") {
+        return true
+    }
+
+    if path.contains("payment_form") || path.contains("order-pay") || path.contains("wc-api") {
+        if absolute.contains("inicis") || absolute.contains("tinicis") || absolute.contains("simplepay") || absolute.contains("payment") {
+            return true
+        }
+    }
+
+    return false
+}
+
+private func spkOpenURLInSafari(_ url: URL) {
+    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+}
+
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
 
     let config = WKWebViewConfiguration()
@@ -129,6 +157,13 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             }
         }
 
+        // SPK v5.5: CodeMShop SimplePay / KG Inicis payment pages must leave WKWebView.
+        // Keep checkout stable by opening payment in the real Safari app.
+        if let requestUrl = navigationAction.request.url, spkShouldOpenPaymentInSafari(requestUrl) {
+            spkOpenURLInSafari(requestUrl)
+            return nil
+        }
+
         // SPK v5.2/v5.3: Kakao/Daum postcode must stay in a real popup WKWebView.
         // Loading it into the main webView breaks the callback to the checkout page.
         if let requestUrl = navigationAction.request.url,
@@ -166,9 +201,8 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return popupWebView
         }
 
-        // SPK v5.4: For all other window.open requests, restore PWABuilder default behavior.
-        // KG Inicis payment flow is not a normal popup. It should continue in the current webView flow,
-        // otherwise the payment session can be lost and the app may return to the home page.
+        // SPK v5.5: For non-payment window.open requests, restore PWABuilder default behavior.
+        // Payment URLs are handled above and opened in Safari. Other popups continue in the current webView flow.
         webView.load(navigationAction.request)
         return nil
     }
@@ -209,6 +243,13 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
                 return
             }
+        }
+
+        // SPK v5.5: Open CodeMShop SimplePay / KG Inicis payment pages in the real Safari app.
+        if let requestUrl = navigationAction.request.url, spkShouldOpenPaymentInSafari(requestUrl) {
+            decisionHandler(.cancel)
+            spkOpenURLInSafari(requestUrl)
+            return
         }
 
         if let requestUrl = navigationAction.request.url{
