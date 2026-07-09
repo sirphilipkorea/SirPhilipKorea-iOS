@@ -3,6 +3,7 @@ import WebKit
 import AuthenticationServices
 import SafariServices
 
+private weak var spkKakaoPopupViewController: UIViewController?
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
 
@@ -28,6 +29,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     webView.isHidden = true;
     webView.navigationDelegate = WKND
+    webView.uiDelegate = VC
     webView.scrollView.bounces = false
     webView.scrollView.contentInsetAdjustmentBehavior = .never
     webView.allowsBackForwardNavigationGestures = true
@@ -103,47 +105,60 @@ func calcWebviewFrame(webviewView: UIView, toolbarView: UIToolbar?) -> CGRect{
 }
 
 extension ViewController: WKUIDelegate, WKDownloadDelegate {
-    // SPK v5.2: Handle new windows safely.
-    // - Printable recipe pages are opened in real Safari for iOS printing.
-    // - Kakao/Daum postcode popups must remain as a real popup WKWebView so window.opener/window.close can work.
-    // - Other new-window requests fall back to the main webview.
+    // redirect new tabs to main webview
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard navigationAction.targetFrame == nil else {
             return nil
         }
 
-        if let requestUrl = navigationAction.request.url {
-            if let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
-               let queryItems = components.queryItems {
-                let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
-                let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+        if let requestUrl = navigationAction.request.url,
+           let requestHost = requestUrl.host,
+           requestHost.contains("postcode.map.kakao.com") || requestHost.contains("postcode.map.daum.net") {
+            let popupViewController = UIViewController()
+            popupViewController.view.backgroundColor = .white
+            popupViewController.navigationItem.title = "Address Search 주소검색"
+            popupViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .close,
+                target: self,
+                action: #selector(spkDismissKakaoPopup)
+            )
 
-                if isSPKPrintPage || asksForSafari {
-                    var cleanComponents = components
-                    let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
-                    cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
-                    let safariUrl = cleanComponents.url ?? requestUrl
-                    UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
-                    return nil
-                }
-            }
+            let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+            popupWebView.translatesAutoresizingMaskIntoConstraints = false
+            popupWebView.navigationDelegate = self
+            popupWebView.uiDelegate = self
+            popupWebView.scrollView.bounces = false
+            popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
 
-            let host = requestUrl.host ?? ""
-            let isKakaoPostcodePopup = host.contains("postcode.map.kakao.com") || host.contains("postcode.map.daum.net")
+            popupViewController.view.addSubview(popupWebView)
+            NSLayoutConstraint.activate([
+                popupWebView.leadingAnchor.constraint(equalTo: popupViewController.view.leadingAnchor),
+                popupWebView.trailingAnchor.constraint(equalTo: popupViewController.view.trailingAnchor),
+                popupWebView.topAnchor.constraint(equalTo: popupViewController.view.safeAreaLayoutGuide.topAnchor),
+                popupWebView.bottomAnchor.constraint(equalTo: popupViewController.view.bottomAnchor)
+            ])
 
-            if isKakaoPostcodePopup {
-                let popupWebView = WKWebView(frame: webviewView.bounds, configuration: configuration)
-                popupWebView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                popupWebView.navigationDelegate = self
-                popupWebView.uiDelegate = self
-                popupWebView.scrollView.bounces = false
-                popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
-                popupWebView.allowsBackForwardNavigationGestures = true
-                if #available(iOS 16.4, macOS 13.3, *) {
-                    popupWebView.isInspectable = true
-                }
-                webviewView.addSubview(popupWebView)
-                return popupWebView
+            let navigationController = UINavigationController(rootViewController: popupViewController)
+            navigationController.modalPresentationStyle = .fullScreen
+            spkKakaoPopupViewController = navigationController
+
+            self.present(navigationController, animated: true, completion: nil)
+            return popupWebView
+        }
+
+        if let requestUrl = navigationAction.request.url,
+           let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
+           let queryItems = components.queryItems {
+            let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
+            let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+
+            if isSPKPrintPage || asksForSafari {
+                var cleanComponents = components
+                let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+                cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
+                let safariUrl = cleanComponents.url ?? requestUrl
+                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+                return nil
             }
         }
 
@@ -151,11 +166,14 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         return nil
     }
 
-    // SPK v5.2: Remove Kakao postcode popup webview when Kakao closes the popup after address selection.
+    @objc func spkDismissKakaoPopup() {
+        spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
+        spkKakaoPopupViewController = nil
+    }
+
     func webViewDidClose(_ webView: WKWebView) {
-        if webView !== self.webView {
-            webView.removeFromSuperview()
-        }
+        spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
+        spkKakaoPopupViewController = nil
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -187,8 +205,8 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
         if let requestUrl = navigationAction.request.url{
             if let requestHost = requestUrl.host {
-                // SPK v5.2: Allow Kakao/Daum postcode popup navigation inside its popup WKWebView.
-                // If this is forced to Safari/SFSafariViewController, the selected address cannot be returned to checkout.
+                // SPK v5.2: Keep Kakao/Daum postcode popup pages inside WKWebView.
+                // Opening them in SFSafariViewController breaks the address callback to the checkout page.
                 if requestHost.contains("postcode.map.kakao.com") || requestHost.contains("postcode.map.daum.net") {
                     decisionHandler(.allow)
                     return
