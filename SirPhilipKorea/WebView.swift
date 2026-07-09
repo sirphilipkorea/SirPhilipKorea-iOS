@@ -103,11 +103,17 @@ func calcWebviewFrame(webviewView: UIView, toolbarView: UIToolbar?) -> CGRect{
 }
 
 extension ViewController: WKUIDelegate, WKDownloadDelegate {
-    // redirect new tabs to main webview
+    // SPK v5.2: Handle new windows safely.
+    // - Printable recipe pages are opened in real Safari for iOS printing.
+    // - Kakao/Daum postcode popups must remain as a real popup WKWebView so window.opener/window.close can work.
+    // - Other new-window requests fall back to the main webview.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if (navigationAction.targetFrame == nil) {
-            if let requestUrl = navigationAction.request.url,
-               let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
+        guard navigationAction.targetFrame == nil else {
+            return nil
+        }
+
+        if let requestUrl = navigationAction.request.url {
+            if let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
                let queryItems = components.queryItems {
                 let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
                 let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
@@ -118,14 +124,38 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
                     let safariUrl = cleanComponents.url ?? requestUrl
                     UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
-                } else {
-                    webView.load(navigationAction.request)
+                    return nil
                 }
-            } else {
-                webView.load(navigationAction.request)
+            }
+
+            let host = requestUrl.host ?? ""
+            let isKakaoPostcodePopup = host.contains("postcode.map.kakao.com") || host.contains("postcode.map.daum.net")
+
+            if isKakaoPostcodePopup {
+                let popupWebView = WKWebView(frame: webviewView.bounds, configuration: configuration)
+                popupWebView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                popupWebView.navigationDelegate = self
+                popupWebView.uiDelegate = self
+                popupWebView.scrollView.bounces = false
+                popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
+                popupWebView.allowsBackForwardNavigationGestures = true
+                if #available(iOS 16.4, macOS 13.3, *) {
+                    popupWebView.isInspectable = true
+                }
+                webviewView.addSubview(popupWebView)
+                return popupWebView
             }
         }
+
+        webView.load(navigationAction.request)
         return nil
+    }
+
+    // SPK v5.2: Remove Kakao postcode popup webview when Kakao closes the popup after address selection.
+    func webViewDidClose(_ webView: WKWebView) {
+        if webView !== self.webView {
+            webView.removeFromSuperview()
+        }
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -157,6 +187,13 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
         if let requestUrl = navigationAction.request.url{
             if let requestHost = requestUrl.host {
+                // SPK v5.2: Allow Kakao/Daum postcode popup navigation inside its popup WKWebView.
+                // If this is forced to Safari/SFSafariViewController, the selected address cannot be returned to checkout.
+                if requestHost.contains("postcode.map.kakao.com") || requestHost.contains("postcode.map.daum.net") {
+                    decisionHandler(.allow)
+                    return
+                }
+
                 // NOTE: Match auth origin first, because host origin may be a subset of auth origin and may therefore always match
                 let matchingAuthOrigin = authOrigins.first(where: { requestHost.range(of: $0) != nil })
                 if (matchingAuthOrigin != nil) {
