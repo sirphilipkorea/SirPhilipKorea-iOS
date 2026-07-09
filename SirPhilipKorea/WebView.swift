@@ -4,7 +4,6 @@ import AuthenticationServices
 import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
-private weak var spkGenericPopupViewController: UIViewController?
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
 
@@ -167,39 +166,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return popupWebView
         }
 
-        // SPK v5.3: Other window.open popups, including KG Inicis payment windows,
-        // must also get their own WKWebView. Do not force-load them into the main checkout webView.
-        // This preserves payment/login popup behavior while keeping the main page alive.
-        let popupViewController = UIViewController()
-        popupViewController.view.backgroundColor = .white
-        popupViewController.navigationItem.title = "Payment / 새 창"
-        popupViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .close,
-            target: self,
-            action: #selector(spkDismissGenericPopup)
-        )
-
-        let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-        popupWebView.translatesAutoresizingMaskIntoConstraints = false
-        popupWebView.navigationDelegate = self
-        popupWebView.uiDelegate = self
-        popupWebView.scrollView.bounces = false
-        popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
-
-        popupViewController.view.addSubview(popupWebView)
-        NSLayoutConstraint.activate([
-            popupWebView.leadingAnchor.constraint(equalTo: popupViewController.view.leadingAnchor),
-            popupWebView.trailingAnchor.constraint(equalTo: popupViewController.view.trailingAnchor),
-            popupWebView.topAnchor.constraint(equalTo: popupViewController.view.safeAreaLayoutGuide.topAnchor),
-            popupWebView.bottomAnchor.constraint(equalTo: popupViewController.view.bottomAnchor)
-        ])
-
-        let navigationController = UINavigationController(rootViewController: popupViewController)
-        navigationController.modalPresentationStyle = .fullScreen
-        spkGenericPopupViewController = navigationController
-
-        self.present(navigationController, animated: true, completion: nil)
-        return popupWebView
+        // SPK v5.4: For all other window.open requests, restore PWABuilder default behavior.
+        // KG Inicis payment flow is not a normal popup. It should continue in the current webView flow,
+        // otherwise the payment session can be lost and the app may return to the home page.
+        webView.load(navigationAction.request)
+        return nil
     }
 
     @objc func spkDismissKakaoPopup() {
@@ -207,16 +178,10 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         spkKakaoPopupViewController = nil
     }
 
-    @objc func spkDismissGenericPopup() {
-        spkGenericPopupViewController?.dismiss(animated: true, completion: nil)
-        spkGenericPopupViewController = nil
-    }
 
     func webViewDidClose(_ webView: WKWebView) {
         spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
         spkKakaoPopupViewController = nil
-        spkGenericPopupViewController?.dismiss(animated: true, completion: nil)
-        spkGenericPopupViewController = nil
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
