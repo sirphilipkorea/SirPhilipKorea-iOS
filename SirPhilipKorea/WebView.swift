@@ -60,7 +60,8 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     webView.uiDelegate = VC
     webView.scrollView.bounces = false
     webView.scrollView.contentInsetAdjustmentBehavior = .never
-    webView.allowsBackForwardNavigationGestures = true
+    // SPK v5.6: Disable iOS swipe-back navigation to protect checkout/cart/payment flow.
+    webView.allowsBackForwardNavigationGestures = false
     
     // Check if macCatalyst 16.4+ is available and if so, enable web inspector.
     // This allows the web app to be inspected using Safari Web Inspector. Supported on iOS 16.4+ and macOS 13.3+
