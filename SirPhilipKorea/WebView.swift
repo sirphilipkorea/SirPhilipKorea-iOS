@@ -4,6 +4,7 @@ import AuthenticationServices
 import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
+private weak var spkGenericPopupViewController: UIViewController?
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
 
@@ -105,12 +106,32 @@ func calcWebviewFrame(webviewView: UIView, toolbarView: UIToolbar?) -> CGRect{
 }
 
 extension ViewController: WKUIDelegate, WKDownloadDelegate {
-    // redirect new tabs to main webview
+    // redirect new tabs to popup webviews when needed
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard navigationAction.targetFrame == nil else {
             return nil
         }
 
+        // SPK v5.3: Printable recipe pages must open in the real Safari app.
+        // WKWebView does not reliably support window.print().
+        if let requestUrl = navigationAction.request.url,
+           let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
+           let queryItems = components.queryItems {
+            let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
+            let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+
+            if isSPKPrintPage || asksForSafari {
+                var cleanComponents = components
+                let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
+                cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
+                let safariUrl = cleanComponents.url ?? requestUrl
+                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
+                return nil
+            }
+        }
+
+        // SPK v5.2/v5.3: Kakao/Daum postcode must stay in a real popup WKWebView.
+        // Loading it into the main webView breaks the callback to the checkout page.
         if let requestUrl = navigationAction.request.url,
            let requestHost = requestUrl.host,
            requestHost.contains("postcode.map.kakao.com") || requestHost.contains("postcode.map.daum.net") {
@@ -146,24 +167,39 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return popupWebView
         }
 
-        if let requestUrl = navigationAction.request.url,
-           let components = URLComponents(url: requestUrl, resolvingAgainstBaseURL: false),
-           let queryItems = components.queryItems {
-            let isSPKPrintPage = queryItems.contains(where: { $0.name == "spk_recipe_print" })
-            let asksForSafari = queryItems.contains(where: { $0.name == "spk_app_open_safari" && $0.value == "1" })
+        // SPK v5.3: Other window.open popups, including KG Inicis payment windows,
+        // must also get their own WKWebView. Do not force-load them into the main checkout webView.
+        // This preserves payment/login popup behavior while keeping the main page alive.
+        let popupViewController = UIViewController()
+        popupViewController.view.backgroundColor = .white
+        popupViewController.navigationItem.title = "Payment / 새 창"
+        popupViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(spkDismissGenericPopup)
+        )
 
-            if isSPKPrintPage || asksForSafari {
-                var cleanComponents = components
-                let cleanedItems = queryItems.filter { $0.name != "spk_app_open_safari" }
-                cleanComponents.queryItems = cleanedItems.isEmpty ? nil : cleanedItems
-                let safariUrl = cleanComponents.url ?? requestUrl
-                UIApplication.shared.open(safariUrl, options: [:], completionHandler: nil)
-                return nil
-            }
-        }
+        let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+        popupWebView.translatesAutoresizingMaskIntoConstraints = false
+        popupWebView.navigationDelegate = self
+        popupWebView.uiDelegate = self
+        popupWebView.scrollView.bounces = false
+        popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
 
-        webView.load(navigationAction.request)
-        return nil
+        popupViewController.view.addSubview(popupWebView)
+        NSLayoutConstraint.activate([
+            popupWebView.leadingAnchor.constraint(equalTo: popupViewController.view.leadingAnchor),
+            popupWebView.trailingAnchor.constraint(equalTo: popupViewController.view.trailingAnchor),
+            popupWebView.topAnchor.constraint(equalTo: popupViewController.view.safeAreaLayoutGuide.topAnchor),
+            popupWebView.bottomAnchor.constraint(equalTo: popupViewController.view.bottomAnchor)
+        ])
+
+        let navigationController = UINavigationController(rootViewController: popupViewController)
+        navigationController.modalPresentationStyle = .fullScreen
+        spkGenericPopupViewController = navigationController
+
+        self.present(navigationController, animated: true, completion: nil)
+        return popupWebView
     }
 
     @objc func spkDismissKakaoPopup() {
@@ -171,9 +207,16 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         spkKakaoPopupViewController = nil
     }
 
+    @objc func spkDismissGenericPopup() {
+        spkGenericPopupViewController?.dismiss(animated: true, completion: nil)
+        spkGenericPopupViewController = nil
+    }
+
     func webViewDidClose(_ webView: WKWebView) {
         spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
         spkKakaoPopupViewController = nil
+        spkGenericPopupViewController?.dismiss(animated: true, completion: nil)
+        spkGenericPopupViewController = nil
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
