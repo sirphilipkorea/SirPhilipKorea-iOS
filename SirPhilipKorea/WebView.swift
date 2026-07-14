@@ -69,7 +69,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
 
     config.userContentController = userContentController
 
-    config.limitsNavigationsToAppBoundDomains = true;
+    config.limitsNavigationsToAppBoundDomains = false;
     config.allowsInlineMediaPlayback = true
     config.preferences.javaScriptCanOpenWindowsAutomatically = true
     config.preferences.setValue(true, forKey: "standalone")
