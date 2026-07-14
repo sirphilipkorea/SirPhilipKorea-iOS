@@ -5,32 +5,55 @@ import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
 
-// SPK v5.5: Detect CodeMShop SimplePay / KG Inicis payment URLs and open them in the real Safari app.
-// iOS WKWebView can lose the payment session or redirect to the home page during payment security redirects.
-private func spkShouldOpenPaymentInSafari(_ url: URL) -> Bool {
+// SPK v5.7: Keep CodeMShop SimplePay / KG Inicis HTTP(S) payment pages inside WKWebView.
+// Only non-web URL schemes used by bank/card apps are opened externally.
+private func spkIsInicisWebURL(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+        return false
+    }
+
     let absolute = url.absoluteString.lowercased()
     let host = (url.host ?? "").lowercased()
     let path = url.path.lowercased()
 
-    if host.contains("inicis") || host.contains("inipay") || host.contains("kcp") || host.contains("kspay") || host.contains("bankpay") {
+    if host.contains("inicis") || host.contains("inipay") || host.contains("bankpay") {
         return true
     }
 
-    if absolute.contains("payment_form") || absolute.contains("transaction_id=tinicis") || absolute.contains("inistdpay") || absolute.contains("inicis") || absolute.contains("inipay") {
+    if absolute.contains("payment_form") || absolute.contains("transaction_id=tinicis") || absolute.contains("inistdpay") {
         return true
     }
 
     if path.contains("payment_form") || path.contains("order-pay") || path.contains("wc-api") {
-        if absolute.contains("inicis") || absolute.contains("tinicis") || absolute.contains("simplepay") || absolute.contains("payment") {
-            return true
-        }
+        return absolute.contains("tinicis") || absolute.contains("simplepay") || absolute.contains("payment")
     }
 
     return false
 }
 
-private func spkOpenURLInSafari(_ url: URL) {
-    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+private func spkOpenExternalPaymentApp(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), !["http", "https", "about", "blob"].contains(scheme) else {
+        return false
+    }
+
+    if UIApplication.shared.canOpenURL(url) {
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    } else {
+        // Let iOS handle unavailable app schemes gracefully without replacing the checkout page.
+        let alert = UIAlertController(
+            title: "Payment app required / 결제 앱 필요",
+            message: "해당 카드사 또는 은행 앱을 설치한 후 다시 시도해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .rootViewController?
+            .present(alert, animated: true)
+    }
+    return true
 }
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
@@ -158,10 +181,15 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             }
         }
 
-        // SPK v5.5: CodeMShop SimplePay / KG Inicis payment pages must leave WKWebView.
-        // Keep checkout stable by opening payment in the real Safari app.
-        if let requestUrl = navigationAction.request.url, spkShouldOpenPaymentInSafari(requestUrl) {
-            spkOpenURLInSafari(requestUrl)
+        // SPK v5.7: Keep KG Inicis/SimplePay payment in the main WKWebView so login,
+        // cart, coupon and checkout sessions remain the same.
+        if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
+            webView.load(navigationAction.request)
+            return nil
+        }
+
+        // Card/bank app schemes are opened externally, while the checkout stays alive.
+        if let requestUrl = navigationAction.request.url, spkOpenExternalPaymentApp(requestUrl) {
             return nil
         }
 
@@ -202,8 +230,8 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return popupWebView
         }
 
-        // SPK v5.5: For non-payment window.open requests, restore PWABuilder default behavior.
-        // Payment URLs are handled above and opened in Safari. Other popups continue in the current webView flow.
+        // SPK v5.7: For non-address popups, keep PWABuilder's same-WebView flow.
+        // Payment HTTP(S) URLs are handled above inside the app.
         webView.load(navigationAction.request)
         return nil
     }
@@ -246,10 +274,15 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             }
         }
 
-        // SPK v5.5: Open CodeMShop SimplePay / KG Inicis payment pages in the real Safari app.
-        if let requestUrl = navigationAction.request.url, spkShouldOpenPaymentInSafari(requestUrl) {
+        // SPK v5.7: Keep Inicis/SimplePay HTTP(S) pages inside the same WKWebView.
+        if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
+            decisionHandler(.allow)
+            return
+        }
+
+        // Open only card/bank application schemes outside the app.
+        if let requestUrl = navigationAction.request.url, spkOpenExternalPaymentApp(requestUrl) {
             decisionHandler(.cancel)
-            spkOpenURLInSafari(requestUrl)
             return
         }
 
