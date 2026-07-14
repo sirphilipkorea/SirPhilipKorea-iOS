@@ -99,6 +99,28 @@
 	<key>WKAppBoundDomains</key>
 	<array>
 		<string>sirphilipkorea.com</string>
+		<string>ksmobile.inicis.com</string>
+		<string>mobile.inicis.com</string>
+		<string>stdpay.inicis.com</string>
+		<string>fcstdpay.inicis.com</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>kakaotalk</string>
+		<string>kb-acp</string>
+		<string>liivbank</string>
+		<string>newliiv</string>
+		<string>shinhan-sr-ansimclick</string>
+		<string>smshinhanansimclick</string>
+		<string>hdcardappcardansimclick</string>
+		<string>mpocket.online.ansimclick</string>
+		<string>lotteappcard</string>
+		<string>nhappcardansimclick</string>
+		<string>citimobileapp</string>
+		<string>cloudpay</string>
+		<string>payco</string>
+		<string>ispmobile</string>
+		<string>bankpay</string>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
