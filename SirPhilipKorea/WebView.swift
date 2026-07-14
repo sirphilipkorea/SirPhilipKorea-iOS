@@ -31,6 +31,50 @@ private func spkIsInicisWebURL(_ url: URL) -> Bool {
     return false
 }
 
+
+// SPK v5.9: Detect CodeMShop SimplePay / KG Inicis card-payment cancellation callback.
+// The callback response calls window.top.jQuery.fn.payment_fail(), which does not reliably
+// return to the WooCommerce checkout when Inicis has replaced the top WKWebView page.
+private func spkIsInicisCancelCallback(_ url: URL) -> Bool {
+    let absolute = url.absoluteString.lowercased()
+    let path = url.path.lowercased()
+
+    guard path.contains("wc-api/wc_gateway_inicis_stdcard") ||
+          absolute.contains("wc_gateway_inicis_stdcard") else {
+        return false
+    }
+
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let queryItems = components.queryItems else {
+        return absolute.contains("type=cancel")
+    }
+
+    return queryItems.contains { item in
+        item.name.lowercased() == "type" && item.value?.lowercased() == "cancel"
+    }
+}
+
+private func spkReturnToCheckoutAfterPaymentCancel(_ webView: WKWebView, presenter: UIViewController) {
+    let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
+        ?? rootUrl.appendingPathComponent("checkout/")
+
+    webView.stopLoading()
+    webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        let alert = UIAlertController(
+            title: "Payment cancelled / 결제 취소",
+            message: "결제가 취소되었습니다. 장바구니와 주문 정보를 확인한 후 다시 결제해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+
+        if presenter.presentedViewController == nil {
+            presenter.present(alert, animated: true)
+        }
+    }
+}
+
 private func spkOpenExternalPaymentApp(_ url: URL) -> Bool {
     guard let scheme = url.scheme?.lowercased(), !["http", "https", "about", "blob"].contains(scheme) else {
         return false
@@ -163,6 +207,12 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return nil
         }
 
+        // SPK v5.9: Handle Inicis cancellation before creating/loading another page.
+        if let requestUrl = navigationAction.request.url, spkIsInicisCancelCallback(requestUrl) {
+            spkReturnToCheckoutAfterPaymentCancel(webView, presenter: self)
+            return nil
+        }
+
         // SPK v5.3: Printable recipe pages must open in the real Safari app.
         // WKWebView does not reliably support window.print().
         if let requestUrl = navigationAction.request.url,
@@ -253,6 +303,15 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         }
         if (navigationAction.shouldPerformDownload || navigationAction.request.url?.scheme == "blob") {
             return decisionHandler(.download)
+        }
+
+        // SPK v5.9: Intercept the SimplePay/Inicis cancel callback.
+        // Do not render its window.top.payment_fail() response in the Inicis page;
+        // return the same WKWebView to WooCommerce checkout instead.
+        if let requestUrl = navigationAction.request.url, spkIsInicisCancelCallback(requestUrl) {
+            decisionHandler(.cancel)
+            spkReturnToCheckoutAfterPaymentCancel(webView, presenter: self)
+            return
         }
 
         // SPK v5.1: Open SPK printable recipe pages in the real Safari app.
