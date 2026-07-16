@@ -4,6 +4,31 @@ import AuthenticationServices
 import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
+private weak var spkReceiptPopupViewController: UIViewController?
+private weak var spkReceiptPopupWebView: WKWebView?
+
+// SPK v6.0: Detect KG Inicis receipt / cash-receipt pages opened from order details.
+// These pages use window.print() and popup navigation that do not work reliably in iOS WKWebView.
+private func spkIsInicisReceiptURL(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+        return false
+    }
+
+    let host = (url.host ?? "").lowercased()
+    let absolute = url.absoluteString.lowercased()
+
+    guard host.contains("inicis") || host.contains("inipay") else {
+        return false
+    }
+
+    let receiptTokens = [
+        "receipt", "cashreceipt", "cash_receipt", "cash-receipt",
+        "현금영수증", "영수증", "bill", "statement", "trade_receipt",
+        "receiptview", "receipt_view", "viewreceipt", "receipt.jsp"
+    ]
+
+    return receiptTokens.contains { absolute.contains($0) }
+}
 
 // SPK v5.7: Keep CodeMShop SimplePay / KG Inicis HTTP(S) payment pages inside WKWebView.
 // Only non-web URL schemes used by bank/card apps are opened externally.
@@ -231,6 +256,12 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             }
         }
 
+        // SPK v6.0: Open Inicis receipt pages in a dedicated in-app popup with
+        // native Close and Print buttons so iPhone users cannot become trapped.
+        if let requestUrl = navigationAction.request.url, spkIsInicisReceiptURL(requestUrl) {
+            return spkPresentReceiptPopup(request: navigationAction.request, configuration: configuration)
+        }
+
         // SPK v5.7: Keep KG Inicis/SimplePay payment in the main WKWebView so login,
         // cart, coupon and checkout sessions remain the same.
         if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
@@ -286,6 +317,73 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         return nil
     }
 
+    private func spkPresentReceiptPopup(request: URLRequest, configuration: WKWebViewConfiguration) -> WKWebView {
+        let popupViewController = UIViewController()
+        popupViewController.view.backgroundColor = .white
+        popupViewController.navigationItem.title = "Receipt / 영수증"
+
+        popupViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: "Close / 닫기",
+            style: .plain,
+            target: self,
+            action: #selector(spkDismissReceiptPopup)
+        )
+
+        popupViewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "Print / 인쇄",
+            style: .plain,
+            target: self,
+            action: #selector(spkPrintReceiptPopup)
+        )
+
+        let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+        popupWebView.translatesAutoresizingMaskIntoConstraints = false
+        popupWebView.navigationDelegate = self
+        popupWebView.uiDelegate = self
+        popupWebView.scrollView.bounces = false
+        popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
+        popupWebView.allowsBackForwardNavigationGestures = false
+
+        popupViewController.view.addSubview(popupWebView)
+        NSLayoutConstraint.activate([
+            popupWebView.leadingAnchor.constraint(equalTo: popupViewController.view.leadingAnchor),
+            popupWebView.trailingAnchor.constraint(equalTo: popupViewController.view.trailingAnchor),
+            popupWebView.topAnchor.constraint(equalTo: popupViewController.view.safeAreaLayoutGuide.topAnchor),
+            popupWebView.bottomAnchor.constraint(equalTo: popupViewController.view.bottomAnchor)
+        ])
+
+        let navigationController = UINavigationController(rootViewController: popupViewController)
+        navigationController.modalPresentationStyle = .fullScreen
+
+        spkReceiptPopupViewController = navigationController
+        spkReceiptPopupWebView = popupWebView
+
+        self.present(navigationController, animated: true) {
+            popupWebView.load(request)
+        }
+
+        return popupWebView
+    }
+
+    @objc func spkDismissReceiptPopup() {
+        spkReceiptPopupWebView?.stopLoading()
+        spkReceiptPopupViewController?.dismiss(animated: true, completion: nil)
+        spkReceiptPopupWebView = nil
+        spkReceiptPopupViewController = nil
+    }
+
+    @objc func spkPrintReceiptPopup() {
+        guard let receiptWebView = spkReceiptPopupWebView else { return }
+
+        let printController = UIPrintInteractionController.shared
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.outputType = .general
+        printInfo.jobName = "Sir Philip Korea Receipt / 써필립코리아 영수증"
+        printController.printInfo = printInfo
+        printController.printFormatter = receiptWebView.viewPrintFormatter()
+        printController.present(animated: true, completionHandler: nil)
+    }
+
     @objc func spkDismissKakaoPopup() {
         spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
         spkKakaoPopupViewController = nil
@@ -293,6 +391,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
 
     func webViewDidClose(_ webView: WKWebView) {
+        if webView === spkReceiptPopupWebView {
+            spkDismissReceiptPopup()
+            return
+        }
+
         spkKakaoPopupViewController?.dismiss(animated: true, completion: nil)
         spkKakaoPopupViewController = nil
     }
@@ -422,6 +525,13 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         }
 
     }
+    // SPK v6.0: Support JavaScript window.print() from the Inicis receipt popup.
+    // The native navigation-bar Print button remains available even when the page does not call this API.
+    @available(iOS 15.0, *)
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        decisionHandler(.deny)
+    }
+
     // Handle javascript: `window.alert(message: String)`
     func webView(_ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
