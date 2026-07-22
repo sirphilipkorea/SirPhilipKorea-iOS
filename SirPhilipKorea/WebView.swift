@@ -6,6 +6,9 @@ import SafariServices
 private weak var spkKakaoPopupViewController: UIViewController?
 private weak var spkReceiptPopupViewController: UIViewController?
 private weak var spkReceiptPopupWebView: WKWebView?
+private weak var spkPaymentPopupViewController: UIViewController?
+private weak var spkPaymentPopupWebView: WKWebView?
+private weak var spkMainWebView: WKWebView?
 
 // SPK v6.0: Detect KG Inicis receipt / cash-receipt pages opened from order details.
 // These pages use window.print() and popup navigation that do not work reliably in iOS WKWebView.
@@ -79,14 +82,29 @@ private func spkIsInicisCancelCallback(_ url: URL) -> Bool {
     }
 }
 
-private func spkReturnToCheckoutAfterPaymentCancel(_ webView: WKWebView, presenter: UIViewController) {
+private func spkReturnToCheckoutAfterPaymentCancel(_ sourceWebView: WKWebView, presenter: UIViewController) {
     let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
         ?? rootUrl.appendingPathComponent("checkout/")
 
-    webView.stopLoading()
-    webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
+    sourceWebView.stopLoading()
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+    let restoreCheckout = {
+        let targetWebView = spkMainWebView ?? sourceWebView
+        targetWebView.stopLoading()
+        targetWebView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    if sourceWebView === spkPaymentPopupWebView {
+        spkPaymentPopupViewController?.dismiss(animated: true) {
+            spkPaymentPopupWebView = nil
+            spkPaymentPopupViewController = nil
+            restoreCheckout()
+        }
+    } else {
+        restoreCheckout()
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
         let alert = UIAlertController(
             title: "Payment cancelled / 결제 취소",
             message: "결제가 취소되었습니다. 장바구니와 주문 정보를 확인한 후 다시 결제해 주세요.",
@@ -144,6 +162,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     config.preferences.setValue(true, forKey: "standalone")
     
     let webView = WKWebView(frame: calcWebviewFrame(webviewView: container, toolbarView: nil), configuration: config)
+    spkMainWebView = webView
     setCustomCookie(webView: webView)
 
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -261,11 +280,12 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             return spkPresentReceiptPopup(request: navigationAction.request, configuration: configuration)
         }
 
-        // SPK v5.7: Keep KG Inicis/SimplePay payment in the main WKWebView so login,
-        // cart, coupon and checkout sessions remain the same.
+        // SPK v6.2: KG Inicis/SimplePay uses window.open() for its payment flow.
+        // Return a genuine child WKWebView instead of reloading the request in the
+        // main webview. This preserves window.opener/window.top, POST data and the
+        // authentication context required by Samsung Card, Shinhan SOL Pay, etc.
         if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
-            webView.load(navigationAction.request)
-            return nil
+            return spkPresentPaymentPopup(configuration: configuration)
         }
 
         // Card/bank app schemes are opened externally, while the checkout stays alive.
@@ -314,6 +334,67 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         // Payment HTTP(S) URLs are handled above inside the app.
         webView.load(navigationAction.request)
         return nil
+    }
+
+    private func spkPresentPaymentPopup(configuration: WKWebViewConfiguration) -> WKWebView {
+        // Close any stale payment popup before creating a new one.
+        if spkPaymentPopupViewController != nil {
+            spkPaymentPopupViewController?.dismiss(animated: false)
+            spkPaymentPopupViewController = nil
+            spkPaymentPopupWebView = nil
+        }
+
+        let popupViewController = UIViewController()
+        popupViewController.view.backgroundColor = .white
+        popupViewController.navigationItem.title = "Secure Payment / 안전결제"
+        popupViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: "Close / 닫기",
+            style: .plain,
+            target: self,
+            action: #selector(spkDismissPaymentPopup)
+        )
+
+        // IMPORTANT: Use the exact WKWebViewConfiguration supplied by WebKit.
+        // It contains the opener relationship, process pool, website data store,
+        // preferences and other state created for this window.open() request.
+        let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+        popupWebView.translatesAutoresizingMaskIntoConstraints = false
+        popupWebView.navigationDelegate = self
+        popupWebView.uiDelegate = self
+        popupWebView.scrollView.bounces = false
+        popupWebView.scrollView.contentInsetAdjustmentBehavior = .never
+        popupWebView.allowsBackForwardNavigationGestures = false
+
+        popupViewController.view.addSubview(popupWebView)
+        NSLayoutConstraint.activate([
+            popupWebView.leadingAnchor.constraint(equalTo: popupViewController.view.leadingAnchor),
+            popupWebView.trailingAnchor.constraint(equalTo: popupViewController.view.trailingAnchor),
+            popupWebView.topAnchor.constraint(equalTo: popupViewController.view.safeAreaLayoutGuide.topAnchor),
+            popupWebView.bottomAnchor.constraint(equalTo: popupViewController.view.bottomAnchor)
+        ])
+
+        let navigationController = UINavigationController(rootViewController: popupViewController)
+        navigationController.modalPresentationStyle = .fullScreen
+
+        spkPaymentPopupViewController = navigationController
+        spkPaymentPopupWebView = popupWebView
+
+        self.present(navigationController, animated: true)
+
+        // Do not call popupWebView.load(...) here.
+        // WebKit automatically loads the original navigationAction request,
+        // including any POST body, into the WKWebView returned by this delegate.
+        return popupWebView
+    }
+
+    @objc func spkDismissPaymentPopup() {
+        guard let paymentWebView = spkPaymentPopupWebView else {
+            spkPaymentPopupViewController?.dismiss(animated: true)
+            spkPaymentPopupViewController = nil
+            return
+        }
+
+        spkReturnToCheckoutAfterPaymentCancel(paymentWebView, presenter: self)
     }
 
     private func spkPresentReceiptPopup(request: URLRequest, configuration: WKWebViewConfiguration) -> WKWebView {
@@ -390,6 +471,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
 
     func webViewDidClose(_ webView: WKWebView) {
+        if webView === spkPaymentPopupWebView {
+            spkReturnToCheckoutAfterPaymentCancel(webView, presenter: self)
+            return
+        }
+
         if webView === spkReceiptPopupWebView {
             spkDismissReceiptPopup()
             return
