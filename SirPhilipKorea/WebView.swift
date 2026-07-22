@@ -213,6 +213,20 @@ func setCustomCookie(webView: WKWebView) {
 
     webView.configuration.websiteDataStore.httpCookieStore.setCookie(_platformCookie)
 
+    // SPK v6.3: App-only marker used by the WordPress payment compatibility plugin.
+    // Safari/Chrome do not receive this cookie, so app_scheme is added only for
+    // checkout requests originating from the Sir Philip Korea iOS app.
+    let spkIOSAppCookie = HTTPCookie(properties: [
+        .domain: rootUrl.host!,
+        .path: "/",
+        .name: "spk_ios_app",
+        .value: "1",
+        .secure: "TRUE",
+        .expires: NSDate(timeIntervalSinceNow: 31556926)
+    ])!
+
+    webView.configuration.websiteDataStore.httpCookieStore.setCookie(spkIOSAppCookie)
+
 }
 
 func calcWebviewFrame(webviewView: UIView, toolbarView: UIToolbar?) -> CGRect{
