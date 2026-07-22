@@ -30,9 +30,11 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string></string>
+			<string>com.sirphilipkorea.app.payment-callback</string>
 			<key>CFBundleURLSchemes</key>
-			<array />
+			<array>
+				<string>sirphilipkorea</string>
+			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
@@ -121,6 +123,57 @@
 		<string>payco</string>
 		<string>ispmobile</string>
 		<string>bankpay</string>
+		<string>kftc-bankpay</string>
+		<string>shc-ansimclick</string>
+		<string>smhyundaiansimclick</string>
+		<string>hyundaicardappcardid</string>
+		<string>monimopay</string>
+		<string>monimopayauth</string>
+		<string>scardcertiapp</string>
+		<string>hanawalletmembers</string>
+		<string>hanaskcardmobileportal</string>
+		<string>nhallonepayansimclick</string>
+		<string>nonghyupcardansimclick</string>
+		<string>kb-screen</string>
+		<string>kbbank</string>
+		<string>newsmartpib</string>
+		<string>com.wooricard.wcard</string>
+		<string>wooripay</string>
+		<string>lottesmartpay</string>
+		<string>lpayapp</string>
+		<string>lmslpay</string>
+		<string>shinsegaeeasypayment</string>
+		<string>supertoss</string>
+		<string>tmoneypay</string>
+		<string>chai</string>
+		<string>tswansimclick</string>
+		<string>uppay</string>
+		<string>kakaobank</string>
+		<string>naversearchapp</string>
+		<string>bankwallet</string>
+		<string>ukbanksmartbanknonloginpay</string>
+		<string>kdb-bankpay</string>
+		<string>ibk-bankpay</string>
+		<string>kb-bankpay</string>
+		<string>keb-bankpay</string>
+		<string>sh-bankpay</string>
+		<string>nhb-bankpay</string>
+		<string>nh-bankpay</string>
+		<string>wr-bankpay</string>
+		<string>sc-bankpay</string>
+		<string>s-bankpay</string>
+		<string>ct-bankpay</string>
+		<string>dg-bankpay</string>
+		<string>bnk-bankpay</string>
+		<string>kj-bankpay</string>
+		<string>jj-bankpay</string>
+		<string>jb-bankpay</string>
+		<string>kn-bankpay</string>
+		<string>kp-bankpay</string>
+		<string>cu-bankpay</string>
+		<string>mg-bankpay</string>
+		<string>kbn-bankpay</string>
+		<string>kkb-bankpay</string>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
@@ -129,12 +182,13 @@
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
 	<key>UIApplicationShortcutItems</key>
-<array>
+	<array>
 		<dict>
 			<key>UIApplicationShortcutItemType</key>
 			<string>https://sirphilipkorea.com/</string>
 			<key>UIApplicationShortcutItemTitle</key>
 			<string>써필립 코리아</string>
-		</dict></array>
+		</dict>
+	</array>
 </dict>
 </plist>
