@@ -1,6 +1,5 @@
 import UIKit
 import WebKit
-import AuthenticationServices
 import SafariServices
 
 private weak var spkKakaoPopupViewController: UIViewController?
@@ -119,28 +118,52 @@ private func spkReturnToCheckoutAfterPaymentCancel(_ sourceWebView: WKWebView, p
 }
 
 private func spkOpenExternalPaymentApp(_ url: URL) -> Bool {
-    guard let scheme = url.scheme?.lowercased(), !["http", "https", "about", "blob"].contains(scheme) else {
+    guard let scheme = url.scheme?.lowercased(),
+          !["http", "https", "about", "blob", "file"].contains(scheme) else {
         return false
     }
 
+    // KG Inicis official iOS guide:
+    // 1) Detect every non-HTTP(S) navigation before normal web navigation.
+    // 2) Open it through UIApplication.
+    // 3) Cancel the WKWebView navigation.
     if UIApplication.shared.canOpenURL(url) {
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
     } else {
-        // Let iOS handle unavailable app schemes gracefully without replacing the checkout page.
         let alert = UIAlertController(
             title: "Payment app required / 결제 앱 필요",
-            message: "해당 카드사 또는 은행 앱을 설치한 후 다시 시도해 주세요.",
+            message: "해당 카드사 또는 은행 앱이 설치되어 있지 않거나 iOS에서 호출할 수 없습니다.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "OK", style: .default))
+
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }?
             .rootViewController?
+            .topMostPresentedViewController?
             .present(alert, animated: true)
     }
+
     return true
+}
+
+private extension UIViewController {
+    var topMostPresentedViewController: UIViewController {
+        if let presented = presentedViewController {
+            return presented.topMostPresentedViewController
+        }
+        if let navigation = self as? UINavigationController,
+           let visible = navigation.visibleViewController {
+            return visible.topMostPresentedViewController
+        }
+        if let tab = self as? UITabBarController,
+           let selected = tab.selectedViewController {
+            return selected.topMostPresentedViewController
+        }
+        return self
+    }
 }
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
@@ -156,10 +179,13 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
 
     config.userContentController = userContentController
 
-    config.limitsNavigationsToAppBoundDomains = false;
+    // SPK v6.4: Follow KG Inicis' official iOS WebView guidance.
+    // Use the normal persistent WKWebView data store and do not modify the
+    // User-Agent or private "standalone" preference.
+    config.websiteDataStore = .default()
+    config.limitsNavigationsToAppBoundDomains = false
     config.allowsInlineMediaPlayback = true
     config.preferences.javaScriptCanOpenWindowsAutomatically = true
-    config.preferences.setValue(true, forKey: "standalone")
     
     let webView = WKWebView(frame: calcWebviewFrame(webviewView: container, toolbarView: nil), configuration: config)
     spkMainWebView = webView
@@ -180,9 +206,8 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         webView.isInspectable = true
     }
     
-    // SPK v6.1: Use WKWebView's native iPhone user agent.
-    // A forced Safari/PWAShell user agent can cause card-company authentication
-    // pages to reject or misclassify the request on iOS.
+    // SPK v6.4: Keep the native WKWebView User-Agent completely untouched.
+    // KG Inicis warns that card-company ACS pages may reject an altered User-Agent.
 
     webView.addObserver(NSO, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: NSKeyValueObservingOptions.new, context: nil)
     
@@ -500,6 +525,15 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // SPK v6.4: KG Inicis official order of handling.
+        // External card/bank app schemes must be processed before any host,
+        // popup, callback or allowed-origin routing.
+        if let requestURL = navigationAction.request.url,
+           spkOpenExternalPaymentApp(requestURL) {
+            decisionHandler(.cancel)
+            return
+        }
+
         if (navigationAction.request.url?.scheme == "about") {
             return decisionHandler(.allow)
         }
@@ -538,12 +572,6 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         // SPK v5.7: Keep Inicis/SimplePay HTTP(S) pages inside the same WKWebView.
         if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
             decisionHandler(.allow)
-            return
-        }
-
-        // Open only card/bank application schemes outside the app.
-        if let requestUrl = navigationAction.request.url, spkOpenExternalPaymentApp(requestUrl) {
-            decisionHandler(.cancel)
             return
         }
 
