@@ -123,47 +123,14 @@ private func spkOpenExternalPaymentApp(_ url: URL) -> Bool {
         return false
     }
 
-    // KG Inicis official iOS guide:
-    // 1) Detect every non-HTTP(S) navigation before normal web navigation.
-    // 2) Open it through UIApplication.
-    // 3) Cancel the WKWebView navigation.
+    // SPK v6.5: Minimal KG Inicis iOS WebView scheme handling.
+    // Every non-web scheme is handed directly to iOS and the WKWebView
+    // navigation is cancelled by the navigation delegate.
     if UIApplication.shared.canOpenURL(url) {
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
-    } else {
-        let alert = UIAlertController(
-            title: "Payment app required / 결제 앱 필요",
-            message: "해당 카드사 또는 은행 앱이 설치되어 있지 않거나 iOS에서 호출할 수 없습니다.",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .rootViewController?
-            .topMostPresentedViewController?
-            .present(alert, animated: true)
     }
 
     return true
-}
-
-private extension UIViewController {
-    var topMostPresentedViewController: UIViewController {
-        if let presented = presentedViewController {
-            return presented.topMostPresentedViewController
-        }
-        if let navigation = self as? UINavigationController,
-           let visible = navigation.visibleViewController {
-            return visible.topMostPresentedViewController
-        }
-        if let tab = self as? UITabBarController,
-           let selected = tab.selectedViewController {
-            return selected.topMostPresentedViewController
-        }
-        return self
-    }
 }
 
 func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNavigationDelegate, NSO: NSObject, VC: ViewController) -> WKWebView{
@@ -179,7 +146,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
 
     config.userContentController = userContentController
 
-    // SPK v6.4: Follow KG Inicis' official iOS WebView guidance.
+    // SPK v6.5: Follow KG Inicis' official iOS WebView guidance.
     // Use the normal persistent WKWebView data store and do not modify the
     // User-Agent or private "standalone" preference.
     config.websiteDataStore = .default()
@@ -206,7 +173,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         webView.isInspectable = true
     }
     
-    // SPK v6.4: Keep the native WKWebView User-Agent completely untouched.
+    // SPK v6.5: Keep the native WKWebView User-Agent completely untouched.
     // KG Inicis warns that card-company ACS pages may reject an altered User-Agent.
 
     webView.addObserver(NSO, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: NSKeyValueObservingOptions.new, context: nil)
@@ -525,7 +492,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // SPK v6.4: KG Inicis official order of handling.
+        // SPK v6.5: KG Inicis official order of handling.
         // External card/bank app schemes must be processed before any host,
         // popup, callback or allowed-origin routing.
         if let requestURL = navigationAction.request.url,
