@@ -118,7 +118,7 @@ private func spkReturnToCheckoutAfterPaymentCancel(_ sourceWebView: WKWebView, p
 }
 
 
-// SPK v6.6: Temporary remote diagnostic logger for the iOS Inicis flow.
+// SPK v6.6.1: Temporary remote diagnostic logger for the iOS Inicis flow.
 // Query values and request bodies are intentionally not transmitted.
 private let spkInicisDebugKey = "tUIQiVXAB0dBCkiIxaAwQ-ch1-CobgyA"
 
@@ -232,7 +232,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
 
     config.userContentController = userContentController
 
-    // SPK v6.6: Follow KG Inicis' official iOS WebView guidance.
+    // SPK v6.6.1: Follow KG Inicis' official iOS WebView guidance.
     // Use the normal persistent WKWebView data store and do not modify the
     // User-Agent or private "standalone" preference.
     config.websiteDataStore = .default()
@@ -259,7 +259,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         webView.isInspectable = true
     }
     
-    // SPK v6.6: Keep the native WKWebView User-Agent completely untouched.
+    // SPK v6.6.1: Keep the native WKWebView User-Agent completely untouched.
     // KG Inicis warns that card-company ACS pages may reject an altered User-Agent.
 
     webView.addObserver(NSO, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: NSKeyValueObservingOptions.new, context: nil)
@@ -569,23 +569,9 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         ])
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        spkSendInicisDiagnostic("navigation_finished", [
-            "webview": spkDebugWebViewName(webView),
-            "url": spkDebugURLSummary(webView.url)
-        ])
-    }
 
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        let nsError = error as NSError
-        spkSendInicisDiagnostic("navigation_failed_provisional", [
-            "webview": spkDebugWebViewName(webView),
-            "url": spkDebugURLSummary(webView.url),
-            "error_domain": nsError.domain,
-            "error_code": nsError.code,
-            "error_description": nsError.localizedDescription
-        ])
-    }
+
+
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
@@ -625,7 +611,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             "url": spkDebugURLSummary(navigationAction.request.url)
         ])
 
-        // SPK v6.6: KG Inicis official order of handling plus remote diagnostics.
+        // SPK v6.6.1: KG Inicis official order of handling plus remote diagnostics.
         // External card/bank app schemes must be processed before any host,
         // popup, callback or allowed-origin routing.
         if let requestURL = navigationAction.request.url,
@@ -708,8 +694,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 if (navigationAction.navigationType == .other &&
                     navigationAction.value(forKey: "syntheticClickType") as! Int == 0 &&
                     (navigationAction.targetFrame != nil) &&
-                    // no error here, fake warning
-                    (navigationAction.sourceFrame != nil)
+                    navigationAction.sourceFrame.isMainFrame
                 ) {
                     decisionHandler(.allow)
                     return
