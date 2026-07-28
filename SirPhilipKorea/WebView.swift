@@ -117,17 +117,103 @@ private func spkReturnToCheckoutAfterPaymentCancel(_ sourceWebView: WKWebView, p
     }
 }
 
+
+// SPK v6.6: Temporary remote diagnostic logger for the iOS Inicis flow.
+// Query values and request bodies are intentionally not transmitted.
+private let spkInicisDebugKey = "tUIQiVXAB0dBCkiIxaAwQ-ch1-CobgyA"
+
+private func spkDebugWebViewName(_ webView: WKWebView?) -> String {
+    guard let webView = webView else { return "unknown" }
+    if webView === spkPaymentPopupWebView { return "payment-popup" }
+    if webView === spkReceiptPopupWebView { return "receipt-popup" }
+    if webView === spkMainWebView { return "main" }
+    return "other"
+}
+
+private func spkDebugNavigationType(_ type: WKNavigationType) -> String {
+    switch type {
+    case .linkActivated: return "linkActivated"
+    case .formSubmitted: return "formSubmitted"
+    case .backForward: return "backForward"
+    case .reload: return "reload"
+    case .formResubmitted: return "formResubmitted"
+    case .other: return "other"
+    @unknown default: return "unknown"
+    }
+}
+
+private func spkDebugURLSummary(_ url: URL?) -> [String: Any] {
+    guard let url = url else { return ["present": false] }
+
+    var queryNames: [String] = []
+    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+        queryNames = (components.queryItems ?? []).map { $0.name }
+    }
+
+    return [
+        "present": true,
+        "scheme": url.scheme?.lowercased() ?? "",
+        "host": url.host?.lowercased() ?? "",
+        "path": url.path,
+        "query_names": Array(Set(queryNames)).sorted(),
+        "absolute_length": url.absoluteString.count
+    ]
+}
+
+private func spkSendInicisDiagnostic(_ event: String, _ details: [String: Any] = [:]) {
+    guard let endpoint = URL(string: "/wp-json/spk-inicis-debug/v1/event", relativeTo: rootUrl)?.absoluteURL else {
+        return
+    }
+
+    var payload: [String: Any] = [
+        "event": event,
+        "timestamp": ISO8601DateFormatter().string(from: Date()),
+        "ios_version": UIDevice.current.systemVersion,
+        "app_state": UIApplication.shared.applicationState == .active ? "active" :
+                     (UIApplication.shared.applicationState == .inactive ? "inactive" : "background")
+    ]
+
+    details.forEach { payload[$0.key] = $0.value }
+
+    guard JSONSerialization.isValidJSONObject(payload),
+          let body = try? JSONSerialization.data(withJSONObject: payload) else {
+        return
+    }
+
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 5
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(spkInicisDebugKey, forHTTPHeaderField: "X-SPK-Debug-Key")
+    request.httpBody = body
+
+    URLSession.shared.dataTask(with: request).resume()
+}
+
 private func spkOpenExternalPaymentApp(_ url: URL) -> Bool {
     guard let scheme = url.scheme?.lowercased(),
           !["http", "https", "about", "blob", "file"].contains(scheme) else {
         return false
     }
 
-    // SPK v6.5: Minimal KG Inicis iOS WebView scheme handling.
-    // Every non-web scheme is handed directly to iOS and the WKWebView
-    // navigation is cancelled by the navigation delegate.
-    if UIApplication.shared.canOpenURL(url) {
-        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    let canOpen = UIApplication.shared.canOpenURL(url)
+
+    spkSendInicisDiagnostic("external_scheme_detected", [
+        "url": spkDebugURLSummary(url),
+        "can_open": canOpen
+    ])
+
+    if canOpen {
+        UIApplication.shared.open(url, options: [:]) { success in
+            spkSendInicisDiagnostic("external_scheme_open_result", [
+                "scheme": scheme,
+                "success": success
+            ])
+        }
+    } else {
+        spkSendInicisDiagnostic("external_scheme_not_available", [
+            "scheme": scheme
+        ])
     }
 
     return true
@@ -146,7 +232,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
 
     config.userContentController = userContentController
 
-    // SPK v6.5: Follow KG Inicis' official iOS WebView guidance.
+    // SPK v6.6: Follow KG Inicis' official iOS WebView guidance.
     // Use the normal persistent WKWebView data store and do not modify the
     // User-Agent or private "standalone" preference.
     config.websiteDataStore = .default()
@@ -173,7 +259,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         webView.isInspectable = true
     }
     
-    // SPK v6.5: Keep the native WKWebView User-Agent completely untouched.
+    // SPK v6.6: Keep the native WKWebView User-Agent completely untouched.
     // KG Inicis warns that card-company ACS pages may reject an altered User-Agent.
 
     webView.addObserver(NSO, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: NSKeyValueObservingOptions.new, context: nil)
@@ -476,6 +562,42 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
     }
 
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        spkSendInicisDiagnostic("navigation_started", [
+            "webview": spkDebugWebViewName(webView),
+            "url": spkDebugURLSummary(webView.url)
+        ])
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        spkSendInicisDiagnostic("navigation_finished", [
+            "webview": spkDebugWebViewName(webView),
+            "url": spkDebugURLSummary(webView.url)
+        ])
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let nsError = error as NSError
+        spkSendInicisDiagnostic("navigation_failed_provisional", [
+            "webview": spkDebugWebViewName(webView),
+            "url": spkDebugURLSummary(webView.url),
+            "error_domain": nsError.domain,
+            "error_code": nsError.code,
+            "error_description": nsError.localizedDescription
+        ])
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        let nsError = error as NSError
+        spkSendInicisDiagnostic("navigation_failed", [
+            "webview": spkDebugWebViewName(webView),
+            "url": spkDebugURLSummary(webView.url),
+            "error_domain": nsError.domain,
+            "error_code": nsError.code,
+            "error_description": nsError.localizedDescription
+        ])
+    }
+
     func webViewDidClose(_ webView: WKWebView) {
         if webView === spkPaymentPopupWebView {
             spkReturnToCheckoutAfterPaymentCancel(webView, presenter: self)
@@ -492,7 +614,18 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
     }
     // restrict navigation to target host, open external links in 3rd party apps
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // SPK v6.5: KG Inicis official order of handling.
+        spkSendInicisDiagnostic("navigation_action", [
+            "webview": spkDebugWebViewName(webView),
+            "navigation_type": spkDebugNavigationType(navigationAction.navigationType),
+            "http_method": navigationAction.request.httpMethod ?? "",
+            "has_http_body": navigationAction.request.httpBody != nil,
+            "target_frame_is_nil": navigationAction.targetFrame == nil,
+            "target_frame_is_main": navigationAction.targetFrame?.isMainFrame ?? false,
+            "source_frame_is_main": navigationAction.sourceFrame.isMainFrame,
+            "url": spkDebugURLSummary(navigationAction.request.url)
+        ])
+
+        // SPK v6.6: KG Inicis official order of handling plus remote diagnostics.
         // External card/bank app schemes must be processed before any host,
         // popup, callback or allowed-origin routing.
         if let requestURL = navigationAction.request.url,
