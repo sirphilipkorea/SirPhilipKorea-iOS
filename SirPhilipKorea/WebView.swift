@@ -686,13 +686,44 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                UIApplication.shared.open(requestUrl, options: [:]) { success in
-                    spkSendInicisDiagnostic("safari_payment_entry_open_result", [
+                // SPK v7.2: Explain the external Safari/card-app flow BEFORE leaving the app.
+                // This is intentionally native iOS UI so the notice is visible before Safari opens.
+                let alert = UIAlertController(
+                    title: "Card payment 안내 / 카드결제 안내",
+                    message: "Safari에서 안전결제를 진행합니다.\n\n결제 중 Safari → 카드사 앱(또는 모니모)으로 이동할 수 있습니다. 결제가 끝난 뒤 Safari로 돌아오면 ‘Sir Philip Korea 앱 열기’ 버튼을 눌러 주문내역으로 돌아와 주세요.\n\nSecure card payment will continue in Safari. After payment, return to Safari and tap ‘Open Sir Philip Korea App’ to return to your orders.",
+                    preferredStyle: .alert
+                )
+
+                // Warm cream background + border makes this notice visually distinct from
+                // the white/green WooCommerce payment-complete screen seen later in Safari.
+                alert.view.backgroundColor = UIColor(red: 1.00, green: 0.965, blue: 0.82, alpha: 1.0)
+                alert.view.layer.cornerRadius = 18
+                alert.view.layer.borderWidth = 1.5
+                alert.view.layer.borderColor = UIColor(red: 0.90, green: 0.66, blue: 0.16, alpha: 1.0).cgColor
+                alert.view.clipsToBounds = true
+
+                alert.addAction(UIAlertAction(title: "Cancel / 취소", style: .cancel) { _ in
+                    spkSendInicisDiagnostic("safari_payment_entry_user_cancelled", [
                         "host": host,
-                        "path": path,
-                        "success": success
+                        "path": path
                     ])
-                }
+                })
+
+                alert.addAction(UIAlertAction(title: "Continue to Safari / Safari에서 결제", style: .default) { _ in
+                    spkSendInicisDiagnostic("safari_payment_entry_user_confirmed", [
+                        "host": host,
+                        "path": path
+                    ])
+                    UIApplication.shared.open(requestUrl, options: [:]) { success in
+                        spkSendInicisDiagnostic("safari_payment_entry_open_result", [
+                            "host": host,
+                            "path": path,
+                            "success": success
+                        ])
+                    }
+                })
+
+                self.present(alert, animated: true)
                 return
             }
         }

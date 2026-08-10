@@ -1,0 +1,9 @@
+Sir Philip Korea iOS - Build 118 source candidate
+Based on uploaded Build 117 project.
+
+Change: WebView.swift SPK v7.2
+- Before opening CodeMShop/KG Inicis payment entry in real Safari, show a native iOS bilingual notice.
+- Safari opens only after user taps Continue to Safari / Safari에서 결제.
+- Added Cancel / 취소 action.
+- Notice uses a warm cream background and gold border to distinguish it from the later Safari payment-complete page.
+- Existing Build 117 payment-complete deep link behavior remains unchanged: sirphilipkorea://payment-complete -> /my-account/orders/ in app WKWebView.
