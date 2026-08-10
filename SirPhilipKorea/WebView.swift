@@ -686,11 +686,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK v7.3: Numbered, easier-to-scan Safari payment guide.
+                // SPK Build 120: concise Safari payment guide + recover checkout on Cancel.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide / 카드결제 안내",
-                    message: "① Safari에서 결제를 진행합니다.\n   Continue payment securely in Safari.\n\n② 카드사 앱 또는 모니모에서 결제합니다.\n   Complete payment in your card app or monimo.\n\n③ 결제 후 Safari로 돌아와\n   ‘Sir Philip Korea 앱 열기’를 눌러주세요.\n   Return to Safari and tap ‘Open Sir Philip Korea App’.\n\n주문내역 화면으로 자동 이동합니다.\nYour Orders page will open automatically.",
+                    message: "결제를 위해 Safari로 이동합니다.\n카드사 앱에서 결제를 완료한 후 Safari로 돌아와\n‘Sir Philip Korea 앱 열기’ 버튼을 눌러주세요.\n\nPayment will continue in Safari.\nAfter completing payment in your card app, return to Safari and tap\n‘Open Sir Philip Korea App’.",
                     preferredStyle: .alert
                 )
 
@@ -732,6 +732,17 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "host": host,
                         "path": path
                     ])
+
+                    // Build 120: the web checkout already entered its Processing state
+                    // before this native guide appeared. Reload checkout so Cancel returns
+                    // to a fully interactive page instead of leaving a grey/frozen overlay.
+                    webView.stopLoading()
+                    let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
+                        ?? rootUrl.appendingPathComponent("checkout/")
+                    webView.load(URLRequest(
+                        url: checkoutURL,
+                        cachePolicy: .reloadIgnoringLocalCacheData
+                    ))
                 })
 
                 alert.addAction(UIAlertAction(title: "Continue to Safari / Safari에서 결제", style: .default) { _ in
