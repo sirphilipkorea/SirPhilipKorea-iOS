@@ -689,8 +689,8 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 // SPK Build 120: concise Safari payment guide + recover checkout on Cancel.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
-                    title: "Card payment guide / 카드결제 안내",
-                    message: "결제를 위해 Safari로 이동합니다.\n카드사 앱에서 결제를 완료한 후 Safari로 돌아와\n‘Sir Philip Korea 앱 열기’ 버튼을 눌러주세요.\n\nPayment will continue in Safari.\nAfter completing payment in your card app, return to Safari and tap\n‘Open Sir Philip Korea App’.",
+                    title: "Card payment guide\n카드결제 안내",
+                    message: "1  Payment will continue in Safari.\nYou will be moved to Safari to proceed with payment.\n\n1. 결제를 위해 사파리로 이동합니다.\n\n2  After completing payment in your card app, return to Safari.\nComplete your payment in your card app and return to Safari.\n\n2. 결제 완료 후 사파리로 돌아옵니다.\n\n3  Tap ‘Open 써필립코리아 App’ button.\nTap the button in Safari to return to 써필립코리아 app.\n\n3. ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
                     preferredStyle: .alert
                 )
 
@@ -745,7 +745,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     ))
                 })
 
-                alert.addAction(UIAlertAction(title: "Continue to Safari / Safari에서 결제", style: .default) { _ in
+                alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
                     spkSendInicisDiagnostic("safari_payment_entry_user_confirmed", [
                         "host": host,
                         "path": path
