@@ -10,6 +10,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     static var shortcutLinkToLaunch: URL? = nil
 
 
+    // SPK v7.0 TEST helper: custom payment return callback.
+    private func spkWebURL(from schemeURL: URL) -> URL? {
+        guard schemeURL.scheme?.lowercased() == "sirphilipkorea" else { return nil }
+        let c = URLComponents(url: schemeURL, resolvingAgainstBaseURL: false)
+        if (c?.host ?? "").lowercased() == "payment-complete" {
+            if let raw = c?.queryItems?.first(where: { $0.name == "url" })?.value,
+               let u = URL(string: raw), let h = u.host?.lowercased(),
+               ["http", "https"].contains(u.scheme?.lowercased() ?? ""),
+               h == "sirphilipkorea.com" || h.hasSuffix(".sirphilipkorea.com") { return u }
+            var t = URLComponents(url: rootUrl, resolvingAgainstBaseURL: false)
+            t?.path = "/"
+            t?.queryItems = [URLQueryItem(name: "spk_ios_payment_return", value: "1")]
+            return t?.url
+        }
+        var legacy = c; legacy?.scheme = "https"; return legacy?.url
+    }
+
     // This function is called when your app launches.
     // Check to see if we were launched via a universal link or a shortcut.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
@@ -29,11 +46,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // See if we were launched via scheme URL
         if let schemeUrl = connectionOptions.urlContexts.first?.url {
-            // Convert scheme://url to a https://url
-            var comps = URLComponents(url: schemeUrl, resolvingAgainstBaseURL: false)
-            comps?.scheme = "https"
-            
-            if let url = comps?.url {
+            if let url = spkWebURL(from: schemeUrl) {
                 SceneDelegate.universalLinkToLaunch = url;
             }
         }
@@ -42,13 +55,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // This function is called when our app is already running and the user clicks a custom scheme URL
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let scheme = URLContexts.first?.url {
-            // Convert scheme://url to a https://url and navigate to it
-            var comps = URLComponents(url: scheme, resolvingAgainstBaseURL: false)
-            comps?.scheme = "https"
-
-            if let url = comps?.url {
+            if let url = spkWebURL(from: scheme) {
                 // Handle it inside our web view in a SPA-friendly way.
-                SirPhilipKorea.webView.evaluateJavaScript("location.href = '\(url)'")
+                SirPhilipKorea.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
             }
         }
     }

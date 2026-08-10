@@ -1,0 +1,15 @@
+SPK iOS Payment Return Test v7.0
+
+Phase 1 only: verifies Safari -> SirPhilipKorea custom-scheme return.
+Existing v6.9 Safari payment handoff remains unchanged.
+
+Changed: SirPhilipKorea/SceneDelegate.swift
+Info.plist already contains scheme: sirphilipkorea
+
+TEST
+1. Build/install this project.
+2. Open Safari on iPhone.
+3. Open: sirphilipkorea://payment-complete
+4. SirPhilipKorea should open and load https://sirphilipkorea.com/?spk_ios_payment_return=1
+
+This does NOT yet alter WooCommerce/Inicis success handling. After this return test succeeds, connect the confirmed WooCommerce payment-complete URL to the custom scheme.
