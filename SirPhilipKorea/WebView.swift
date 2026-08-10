@@ -686,21 +686,46 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK v7.2: Explain the external Safari/card-app flow BEFORE leaving the app.
-                // This is intentionally native iOS UI so the notice is visible before Safari opens.
+                // SPK v7.3: Numbered, easier-to-scan Safari payment guide.
+                // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
-                    title: "Card payment 안내 / 카드결제 안내",
-                    message: "Safari에서 안전결제를 진행합니다.\n\n결제 중 Safari → 카드사 앱(또는 모니모)으로 이동할 수 있습니다. 결제가 끝난 뒤 Safari로 돌아오면 ‘Sir Philip Korea 앱 열기’ 버튼을 눌러 주문내역으로 돌아와 주세요.\n\nSecure card payment will continue in Safari. After payment, return to Safari and tap ‘Open Sir Philip Korea App’ to return to your orders.",
+                    title: "Card payment guide / 카드결제 안내",
+                    message: "① Safari에서 결제를 진행합니다.\n   Continue payment securely in Safari.\n\n② 카드사 앱 또는 모니모에서 결제합니다.\n   Complete payment in your card app or monimo.\n\n③ 결제 후 Safari로 돌아와\n   ‘Sir Philip Korea 앱 열기’를 눌러주세요.\n   Return to Safari and tap ‘Open Sir Philip Korea App’.\n\n주문내역 화면으로 자동 이동합니다.\nYour Orders page will open automatically.",
                     preferredStyle: .alert
                 )
 
-                // Warm cream background + border makes this notice visually distinct from
-                // the white/green WooCommerce payment-complete screen seen later in Safari.
-                alert.view.backgroundColor = UIColor(red: 1.00, green: 0.965, blue: 0.82, alpha: 1.0)
-                alert.view.layer.cornerRadius = 18
-                alert.view.layer.borderWidth = 1.5
-                alert.view.layer.borderColor = UIColor(red: 0.90, green: 0.66, blue: 0.16, alpha: 1.0).cgColor
-                alert.view.clipsToBounds = true
+                // Warm ivory card + stronger gold outline for clear separation from checkout.
+                alert.view.backgroundColor = UIColor(red: 1.00, green: 0.975, blue: 0.88, alpha: 1.0)
+                alert.view.layer.cornerRadius = 24
+                alert.view.layer.borderWidth = 2.0
+                alert.view.layer.borderColor = UIColor(red: 0.92, green: 0.64, blue: 0.10, alpha: 1.0).cgColor
+                alert.view.layer.shadowColor = UIColor.black.cgColor
+                alert.view.layer.shadowOpacity = 0.22
+                alert.view.layer.shadowRadius = 14
+                alert.view.layer.shadowOffset = CGSize(width: 0, height: 7)
+
+                // Make title and instructions easier to read without changing behavior.
+                if let title = alert.title {
+                    let titleText = NSMutableAttributedString(string: title)
+                    titleText.addAttributes([
+                        .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                        .foregroundColor: UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1.0)
+                    ], range: NSRange(location: 0, length: titleText.length))
+                    alert.setValue(titleText, forKey: "attributedTitle")
+                }
+                if let message = alert.message {
+                    let messageText = NSMutableAttributedString(string: message)
+                    let paragraph = NSMutableParagraphStyle()
+                    paragraph.alignment = .left
+                    paragraph.lineSpacing = 4
+                    paragraph.paragraphSpacing = 5
+                    messageText.addAttributes([
+                        .font: UIFont.systemFont(ofSize: 15.5, weight: .regular),
+                        .foregroundColor: UIColor(red: 0.28, green: 0.25, blue: 0.17, alpha: 1.0),
+                        .paragraphStyle: paragraph
+                    ], range: NSRange(location: 0, length: messageText.length))
+                    alert.setValue(messageText, forKey: "attributedMessage")
+                }
 
                 alert.addAction(UIAlertAction(title: "Cancel / 취소", style: .cancel) { _ in
                     spkSendInicisDiagnostic("safari_payment_entry_user_cancelled", [

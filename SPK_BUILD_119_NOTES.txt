@@ -1,0 +1,11 @@
+Sir Philip Korea iOS Build 119 UI refinement
+
+- Based directly on Build 118 source.
+- Existing Safari payment handoff logic is unchanged.
+- Existing sirphilipkorea://payment-complete deep-link and Orders navigation are unchanged.
+- Pre-payment native iOS alert redesigned for readability:
+  1. Safari payment
+  2. Card app / monimo payment
+  3. Return to Safari and open Sir Philip Korea app
+- Warm ivory background, stronger gold border, larger corner radius, shadow, improved typography.
+- No PHP/WooCommerce payment logic changes.
