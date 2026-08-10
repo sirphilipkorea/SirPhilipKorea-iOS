@@ -1,0 +1,25 @@
+SPK iOS Payment Return Test v7.1 (Build 117 candidate)
+
+Purpose
+- Keep the existing Safari / external-card payment handoff behavior unchanged.
+- Change only the custom deep-link destination after the app receives:
+  sirphilipkorea://payment-complete
+
+Behavior
+- sirphilipkorea://payment-complete is NOT a payment screen.
+- It is an iOS custom URL scheme used as a return signal to open SirPhilipKorea.
+- When received, the app now loads this URL directly in its WKWebView:
+  https://sirphilipkorea.com/my-account/orders/
+
+Changed file
+- SirPhilipKorea/SceneDelegate.swift
+
+Test before making another real card payment
+1. Build and install this version through TestFlight.
+2. Make sure the SirPhilipKorea app is logged in.
+3. Open Safari.
+4. Enter: sirphilipkorea://payment-complete
+5. Accept the iOS prompt to open SirPhilipKorea if shown.
+6. Expected result: SirPhilipKorea opens directly to Orders / 주문내역.
+
+If this test succeeds, the deep-link destination is working. Only then proceed to the next payment-return integration test.

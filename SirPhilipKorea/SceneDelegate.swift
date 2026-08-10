@@ -19,9 +19,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                let u = URL(string: raw), let h = u.host?.lowercased(),
                ["http", "https"].contains(u.scheme?.lowercased() ?? ""),
                h == "sirphilipkorea.com" || h.hasSuffix(".sirphilipkorea.com") { return u }
+            // v7.1: payment-complete is a deep-link signal, not a payment page.
+            // Open WooCommerce Orders directly inside the app WebView.
+            // This preserves the app's WKWebView login cookies/session.
             var t = URLComponents(url: rootUrl, resolvingAgainstBaseURL: false)
-            t?.path = "/"
-            t?.queryItems = [URLQueryItem(name: "spk_ios_payment_return", value: "1")]
+            t?.path = "/my-account/orders/"
+            t?.query = nil
+            t?.fragment = nil
             return t?.url
         }
         var legacy = c; legacy?.scheme = "https"; return legacy?.url
