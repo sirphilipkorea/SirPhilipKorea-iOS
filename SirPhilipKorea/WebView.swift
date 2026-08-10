@@ -657,7 +657,47 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
             }
         }
 
-        // SPK v5.7: Keep Inicis/SimplePay HTTP(S) pages inside the same WKWebView.
+        // SPK v6.9 TEST: Hand the CodeMShop -> KG Inicis payment entry to the real Safari app.
+        //
+        // The diagnostic log confirmed this exact navigation occurs in the MAIN WKWebView:
+        // payment.codemshop.com/.../pg/inicis/proxy/payment_form
+        //
+        // IMPORTANT:
+        // - Intercept here in WKNavigationDelegate, before spkIsInicisWebURL() allows it.
+        // - Only intercept the CodeMShop Inicis proxy payment_form entry.
+        // - Do NOT intercept mobile.inicis.com or card-company ACS URLs here.
+        // - This is intentionally a narrow A/B diagnostic test.
+        if let requestUrl = navigationAction.request.url {
+            let host = (requestUrl.host ?? "").lowercased()
+            let path = requestUrl.path.lowercased()
+
+            let isCodeMShopInicisPaymentEntry =
+                host == "payment.codemshop.com" &&
+                path.contains("/pg/inicis/proxy/payment_form")
+
+            if isCodeMShopInicisPaymentEntry {
+                spkSendInicisDiagnostic("safari_payment_entry_intercepted", [
+                    "webview": spkDebugWebViewName(webView),
+                    "navigation_type": spkDebugNavigationType(navigationAction.navigationType),
+                    "http_method": navigationAction.request.httpMethod ?? "",
+                    "has_http_body": navigationAction.request.httpBody != nil,
+                    "url": spkDebugURLSummary(requestUrl)
+                ])
+
+                decisionHandler(.cancel)
+
+                UIApplication.shared.open(requestUrl, options: [:]) { success in
+                    spkSendInicisDiagnostic("safari_payment_entry_open_result", [
+                        "host": host,
+                        "path": path,
+                        "success": success
+                    ])
+                }
+                return
+            }
+        }
+
+        // SPK v5.7: Keep all other Inicis/SimplePay HTTP(S) pages inside the same WKWebView.
         if let requestUrl = navigationAction.request.url, spkIsInicisWebURL(requestUrl) {
             decisionHandler(.allow)
             return
