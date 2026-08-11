@@ -690,7 +690,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
-                    message: "English\n\n❶ Payment will continue in Safari.\nYou will be moved to Safari to proceed with payment.\n\n❷ After completing payment in your card app, return to Safari.\nComplete your payment in your card app and return to Safari.\n\n❸ Tap ‘Open Sir Philip Korea App’ button.\nTap the button in Safari to return to Sir Philip Korea app.\n\n────────────\n\n한국어\n\n❶ 결제를 위해 사파리로 이동합니다.\n\n❷ 결제 완료 후 사파리로 돌아옵니다.\n\n❸ ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
+                    message: "English\n\n❶ Payment will continue in Safari.\nYou will be moved to Safari to proceed with payment.\n\n❷ Complete your payment in your card app and return to Safari.\n\n❸ Tap ‘Open Sir Philip Korea App’ button.\nTap the button in Safari to return to Sir Philip Korea app.\n\n────────────\n\n한국어\n\n❶ 결제를 위해 사파리로 이동합니다.\n\n❷ 결제 완료 후 사파리로 돌아옵니다.\n\n❸ ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
                     preferredStyle: .alert
                 )
 
