@@ -266,7 +266,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
-    // SPK Build 137:
+    // SPK Build 138:
     // When Safari/card-app payment temporarily sends SirPhilipKorea to the
     // background, WooCommerce can leave its checkout blockUI/processing layer
     // frozen in the app WKWebView.  Returning to the app is NOT treated as a
@@ -761,7 +761,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 path.contains("/pg/inicis/proxy/payment_form")
 
             if isCodeMShopInicisPaymentEntry {
-                spkSendInicisDiagnostic("safari_payment_entry_intercepted", [
+                spkSendInicisDiagnostic("safari_payment_entry_intercepted_build138", [
                     "webview": spkDebugWebViewName(webView),
                     "navigation_type": spkDebugNavigationType(navigationAction.navigationType),
                     "http_method": navigationAction.request.httpMethod ?? "",
@@ -769,174 +769,23 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     "url": spkDebugURLSummary(requestUrl)
                 ])
 
+                // Build 138:
+                // The user has ALREADY confirmed the pre-submit guide inside Checkout.
+                // Therefore do not show a second native guide here. Hand the payment
+                // entry directly to Safari.
                 decisionHandler(.cancel)
 
-                // SPK Build 134: Safari card-payment handoff + compact guide. False foreground recovery popup removed.
-                // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
-                let alert = UIAlertController(
-                    title: "Card payment guide\n카드결제 안내",
-                    message: "English\n\n❶ Complete payment in Safari.\n→ Tap the button below.\n\n❷ After payment, find Safari.\n→ Home Screen? Swipe up and select Safari.\n\n❸ Return to Sir Philip Korea.\n→ Tap ‘Open Sir Philip Korea App’.\n\nIf you cancel payment, tap Cancel once more to return to Sir Philip Korea.\nTo change the payment method, return to Sir Philip Korea and start again.\n\n────────────\n\n한국어\n\n❶ Safari에서 결제를 완료합니다.\n→ 아래 버튼을 눌러주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이면 아래에서 위로 밀어 Safari를 선택합니다.\n\n❸ 써필립코리아로 돌아옵니다.\n→ ‘써필립코리아 앱 열기’를 눌러주세요.\n\n결제를 취소한 경우 취소 버튼을 한 번 더 눌러 써필립코리아로 돌아와 주세요.\n다른 결제수단을 이용하려면 써필립코리아로 돌아와 다시 결제해 주세요.",
-                    preferredStyle: .alert
-                )
+                UserDefaults.standard.set(true, forKey: spkSafariCardPaymentPendingKey)
+                UserDefaults.standard.set(requestUrl.absoluteString, forKey: spkSafariCardPaymentURLKey)
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: spkSafariCardPaymentStartedAtKey)
 
-                // Warm ivory card + stronger gold outline for clear separation from checkout.
-                alert.view.backgroundColor = UIColor(red: 1.00, green: 0.975, blue: 0.88, alpha: 1.0)
-                alert.view.layer.cornerRadius = 24
-                alert.view.layer.borderWidth = 2.0
-                alert.view.layer.borderColor = UIColor(red: 0.92, green: 0.64, blue: 0.10, alpha: 1.0).cgColor
-                alert.view.layer.shadowColor = UIColor.black.cgColor
-                alert.view.layer.shadowOpacity = 0.22
-                alert.view.layer.shadowRadius = 14
-                alert.view.layer.shadowOffset = CGSize(width: 0, height: 7)
-
-                if let title = alert.title {
-                    let titleText = NSMutableAttributedString(string: title)
-                    let titleParagraph = NSMutableParagraphStyle()
-                    titleParagraph.alignment = .center
-                    titleParagraph.lineSpacing = 3
-                    titleText.addAttributes([
-                        .font: UIFont.systemFont(ofSize: 20, weight: .bold),
-                        .foregroundColor: UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1.0),
-                        .paragraphStyle: titleParagraph
-                    ], range: NSRange(location: 0, length: titleText.length))
-                    alert.setValue(titleText, forKey: "attributedTitle")
-                }
-
-                if let message = alert.message {
-                    let ns = message as NSString
-                    let styled = NSMutableAttributedString(string: message)
-                    let p = NSMutableParagraphStyle()
-                    p.alignment = .left
-                    p.lineSpacing = 2
-                    p.paragraphSpacing = 3
-                    styled.addAttributes([
-                        .font: UIFont.systemFont(ofSize: 12.2),
-                        .foregroundColor: UIColor(red: 0.38, green: 0.38, blue: 0.38, alpha: 1),
-                        .paragraphStyle: p
-                    ], range: NSRange(location: 0, length: styled.length))
-
-                    let green = UIColor(red: 0.08, green: 0.39, blue: 0.25, alpha: 1)
-                    let dark = UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1)
-                    for heading in ["English", "한국어"] {
-                        let r = ns.range(of: heading)
-                        if r.location != NSNotFound {
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:14.5,weight:.bold), .foregroundColor:green], range:r)
-                        }
-                    }
-                    let steps = [
-                        "❶ Complete payment in Safari.",
-                        "❷ After payment, find Safari.",
-                        "❸ Return to Sir Philip Korea.",
-                        "❶ Safari에서 결제를 완료합니다.",
-                        "❷ 결제 후 Safari를 찾아주세요.",
-                        "❸ 써필립코리아로 돌아옵니다."
-                    ]
-                    for s in steps {
-                        let r = ns.range(of:s)
-                        if r.location != NSNotFound {
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:13.6,weight:.bold), .foregroundColor:dark], range:r)
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15.5,weight:.bold), .foregroundColor:green], range:NSRange(location:r.location,length:1))
-                        }
-                    }
-                    let divider = ns.range(of:"────────────")
-                    if divider.location != NSNotFound {
-                        styled.addAttribute(.foregroundColor, value: UIColor(red:0.76,green:0.55,blue:0.12,alpha:1), range:divider)
-                    }
-                    alert.setValue(styled, forKey:"attributedMessage")
-                }
-
-                alert.addAction(UIAlertAction(title: "Cancel / 취소", style: .cancel) { _ in
-                    spkSendInicisDiagnostic("safari_payment_entry_user_cancelled", [
+                UIApplication.shared.open(requestUrl, options: [:]) { success in
+                    spkSendInicisDiagnostic("safari_payment_entry_open_result_build138", [
                         "host": host,
-                        "path": path
+                        "path": path,
+                        "success": success
                     ])
-
-                    // SPK Build 137:
-                    // Safari has NOT been opened yet. Ask the WordPress bridge to
-                    // release WooCommerce's Processing/BlockUI state in the exact
-                    // page that initiated the payment. This keeps cart/address/
-                    // coupon/payment selections intact and avoids a full reload.
-                    let pluginCancelJS = #"""
-                    (function () {
-                        try {
-                            if (window.SPKIOSCardSafariBridge &&
-                                typeof window.SPKIOSCardSafariBridge.cancelBeforeSafari === 'function') {
-                                return window.SPKIOSCardSafariBridge.cancelBeforeSafari();
-                            }
-                            return 'bridge-missing';
-                        } catch (e) {
-                            return 'bridge-error:' + String(e);
-                        }
-                    })();
-                    """#
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                        webView.evaluateJavaScript(pluginCancelJS) { result, error in
-                            let resultText = String(describing: result ?? "")
-                            spkSendInicisDiagnostic("build137_guide_cancel_bridge_result", [
-                                "result": resultText,
-                                "error": error?.localizedDescription ?? ""
-                            ])
-
-                            // Native fallback for cached/older PHP pages where the
-                            // v1.9.3 bridge is not yet present.
-                            if resultText.contains("bridge-missing") ||
-                               resultText.contains("bridge-error") ||
-                               error != nil {
-                                let fallbackJS = #"""
-                                (function () {
-                                    try {
-                                        if (window.jQuery) {
-                                            var $ = window.jQuery;
-                                            try { $('form.checkout').removeClass('processing').unblock(); } catch (e) {}
-                                            try { $('.woocommerce-checkout').removeClass('processing').unblock(); } catch (e) {}
-                                            try { $('body').removeClass('processing').unblock(); } catch (e) {}
-                                            try { $(document.body).trigger('update_checkout'); } catch (e) {}
-                                        }
-                                        document.querySelectorAll('.blockUI.blockOverlay,.blockUI.blockMsg,.blockOverlay').forEach(function(el){
-                                            try { el.remove(); } catch(e) { el.style.display='none'; }
-                                        });
-                                        var b = document.getElementById('place_order');
-                                        if (b) {
-                                            b.disabled = false;
-                                            b.removeAttribute('disabled');
-                                            b.removeAttribute('aria-busy');
-                                            b.style.pointerEvents = '';
-                                            b.style.opacity = '';
-                                        }
-                                        return 'native-fallback-released';
-                                    } catch (e) {
-                                        return 'native-fallback-error:' + String(e);
-                                    }
-                                })();
-                                """#
-                                webView.evaluateJavaScript(fallbackJS, completionHandler: nil)
-                            }
-                        }
-                    }
-                })
-
-                alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
-                    // Build 131: remember the real Safari payment URL and mark the
-                    // external payment as pending only after the user explicitly continues.
-                    UserDefaults.standard.set(true, forKey: spkSafariCardPaymentPendingKey)
-                    UserDefaults.standard.set(requestUrl.absoluteString, forKey: spkSafariCardPaymentURLKey)
-                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: spkSafariCardPaymentStartedAtKey)
-
-                    spkSendInicisDiagnostic("safari_payment_entry_user_confirmed", [
-                        "host": host,
-                        "path": path
-                    ])
-                    UIApplication.shared.open(requestUrl, options: [:]) { success in
-                        spkSendInicisDiagnostic("safari_payment_entry_open_result", [
-                            "host": host,
-                            "path": path,
-                            "success": success
-                        ])
-                    }
-                })
-
-                self.present(alert, animated: true)
+                }
                 return
             }
         }
