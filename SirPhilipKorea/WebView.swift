@@ -686,11 +686,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK Build 122: concise bilingual guide with emphasized step numbers and titles.
+                // SPK Build 123: unified Safari card-payment handoff + compact guide + safe cancel/retry recovery.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
-                    message: "English\n\n❶ Continue to Safari and complete your card payment.\n→ Tap the button below to continue.\n\n❷ After payment, find Safari.\n→ If you see the Home Screen, swipe up to see your open apps.\n\n❸ Return to Sir Philip Korea.\n→ Open Safari and tap ‘Open Sir Philip Korea App’.\n\n────────────\n\n한국어\n\n❶ Safari에서 카드결제를 완료합니다.\n→ 아래 버튼을 눌러 결제를 진행해 주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이 나오면 화면 아래에서 위로 밀어 실행 중인 앱을 확인합니다.\n\n❸ 써필립코리아 앱으로 돌아옵니다.\n→ Safari를 열고 ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
+                    message: "English\n\n❶ Complete payment in Safari.\n→ Tap the button below.\n\n❷ After payment, find Safari.\n→ Home Screen? Swipe up and select Safari.\n\n❸ Return to Sir Philip Korea.\n→ Tap ‘Open Sir Philip Korea App’.\n\nIf you cancel payment, return to Sir Philip Korea and start again.\n\n────────────\n\n한국어\n\n❶ Safari에서 결제를 완료합니다.\n→ 아래 버튼을 눌러주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이면 아래에서 위로 밀어 Safari를 선택합니다.\n\n❸ 써필립코리아로 돌아옵니다.\n→ ‘써필립코리아 앱 열기’를 눌러주세요.\n\n결제를 취소했다면 써필립코리아로 돌아와 처음부터 다시 결제해 주세요.",
                     preferredStyle: .alert
                 )
 
@@ -722,10 +722,10 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     let styled = NSMutableAttributedString(string: message)
                     let p = NSMutableParagraphStyle()
                     p.alignment = .left
-                    p.lineSpacing = 4
-                    p.paragraphSpacing = 5
+                    p.lineSpacing = 2
+                    p.paragraphSpacing = 3
                     styled.addAttributes([
-                        .font: UIFont.systemFont(ofSize: 13.6),
+                        .font: UIFont.systemFont(ofSize: 12.2),
                         .foregroundColor: UIColor(red: 0.38, green: 0.38, blue: 0.38, alpha: 1),
                         .paragraphStyle: p
                     ], range: NSRange(location: 0, length: styled.length))
@@ -735,22 +735,22 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     for heading in ["English", "한국어"] {
                         let r = ns.range(of: heading)
                         if r.location != NSNotFound {
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15.5,weight:.bold), .foregroundColor:green], range:r)
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:14.5,weight:.bold), .foregroundColor:green], range:r)
                         }
                     }
                     let steps = [
-                        "❶ Continue to Safari and complete your card payment.",
+                        "❶ Complete payment in Safari.",
                         "❷ After payment, find Safari.",
                         "❸ Return to Sir Philip Korea.",
-                        "❶ Safari에서 카드결제를 완료합니다.",
+                        "❶ Safari에서 결제를 완료합니다.",
                         "❷ 결제 후 Safari를 찾아주세요.",
-                        "❸ 써필립코리아 앱으로 돌아옵니다."
+                        "❸ 써필립코리아로 돌아옵니다."
                     ]
                     for s in steps {
                         let r = ns.range(of:s)
                         if r.location != NSNotFound {
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15,weight:.bold), .foregroundColor:dark], range:r)
-                            styled.addAttributes([.font:UIFont.systemFont(ofSize:17,weight:.bold), .foregroundColor:green], range:NSRange(location:r.location,length:1))
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:13.6,weight:.bold), .foregroundColor:dark], range:r)
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15.5,weight:.bold), .foregroundColor:green], range:NSRange(location:r.location,length:1))
                         }
                     }
                     let divider = ns.range(of:"────────────")
@@ -766,8 +766,8 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // Build 120: the web checkout already entered its Processing state
-                    // before this native guide appeared. Reload checkout so Cancel returns
+                    // Build 123 recovery: the web checkout already entered its Processing state
+                    // before this native guide appeared. Always reload checkout so Cancel returns
                     // to a fully interactive page instead of leaving a grey/frozen overlay.
                     webView.stopLoading()
                     let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
