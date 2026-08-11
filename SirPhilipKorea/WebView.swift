@@ -266,7 +266,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
-    // SPK Build 139:
+    // SPK Build 140:
     // When Safari/card-app payment temporarily sends SirPhilipKorea to the
     // background, WooCommerce can leave its checkout blockUI/processing layer
     // frozen in the app WKWebView.  Returning to the app is NOT treated as a
@@ -288,6 +288,14 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
                 var isCheckout = /\/checkout\/?(?:[?#]|$)/i.test(href) || /\/order-pay\//i.test(href);
                 if (!isCheckout) { return 'not-checkout'; }
 
+                // SPK Shop UX owns the visible bilingual Processing overlay.
+                // Use its public unlock API first when available.
+                try {
+                    if (window.SPKProcessingGuard && typeof window.SPKProcessingGuard.unlock === 'function') {
+                        window.SPKProcessingGuard.unlock();
+                    }
+                } catch (e) {}
+
                 if (window.jQuery) {
                     var $ = window.jQuery;
                     try { $('form.checkout').removeClass('processing'); } catch (e) {}
@@ -297,6 +305,21 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
                     try { $('.woocommerce-checkout').unblock(); } catch (e) {}
                     try { $('body').unblock(); } catch (e) {}
                 }
+
+                // Fallback for a stale SPK Shop UX overlay if its JS object is unavailable.
+                var spkOverlay = document.getElementById('spk-processing-overlay');
+                if (spkOverlay) {
+                    spkOverlay.classList.remove('spk-show');
+                    spkOverlay.style.pointerEvents = 'none';
+                }
+                document.querySelectorAll('[data-spk-processing="1"]').forEach(function (el) {
+                    try {
+                        el.classList.remove('spk-processing-lock', 'spk-coupon-removing');
+                        el.removeAttribute('aria-disabled');
+                        if ('disabled' in el) el.disabled = false;
+                        delete el.dataset.spkProcessing;
+                    } catch (e) {}
+                });
 
                 // jQuery blockUI nodes can survive an interrupted external-app handoff.
                 document.querySelectorAll('.blockUI.blockOverlay, .blockUI.blockMsg, .blockOverlay').forEach(function (el) {
@@ -761,7 +784,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 path.contains("/pg/inicis/proxy/payment_form")
 
             if isCodeMShopInicisPaymentEntry {
-                spkSendInicisDiagnostic("safari_payment_entry_intercepted_build139", [
+                spkSendInicisDiagnostic("safari_payment_entry_intercepted_build140", [
                     "webview": spkDebugWebViewName(webView),
                     "navigation_type": spkDebugNavigationType(navigationAction.navigationType),
                     "http_method": navigationAction.request.httpMethod ?? "",
@@ -769,7 +792,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     "url": spkDebugURLSummary(requestUrl)
                 ])
 
-                // Build 139:
+                // Build 140:
                 // The user has ALREADY confirmed the pre-submit guide inside Checkout.
                 // Therefore do not show a second native guide here. Hand the payment
                 // entry directly to Safari.
@@ -780,7 +803,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: spkSafariCardPaymentStartedAtKey)
 
                 UIApplication.shared.open(requestUrl, options: [:]) { success in
-                    spkSendInicisDiagnostic("safari_payment_entry_open_result_build139", [
+                    spkSendInicisDiagnostic("safari_payment_entry_open_result_build140", [
                         "host": host,
                         "path": path,
                         "success": success
