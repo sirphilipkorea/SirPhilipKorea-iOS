@@ -686,11 +686,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK Build 123: unified Safari card-payment handoff + compact guide + safe cancel/retry recovery.
+                // SPK Build 124: unified Safari card-payment handoff + compact guide + safe cancel/retry recovery.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
-                    message: "English\n\n❶ Complete payment in Safari.\n→ Tap the button below.\n\n❷ After payment, find Safari.\n→ Home Screen? Swipe up and select Safari.\n\n❸ Return to Sir Philip Korea.\n→ Tap ‘Open Sir Philip Korea App’.\n\nIf you cancel payment, return to Sir Philip Korea and start again.\n\n────────────\n\n한국어\n\n❶ Safari에서 결제를 완료합니다.\n→ 아래 버튼을 눌러주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이면 아래에서 위로 밀어 Safari를 선택합니다.\n\n❸ 써필립코리아로 돌아옵니다.\n→ ‘써필립코리아 앱 열기’를 눌러주세요.\n\n결제를 취소했다면 써필립코리아로 돌아와 처음부터 다시 결제해 주세요.",
+                    message: "English\n\n❶ Complete payment in Safari.\n→ Tap the button below.\n\n❷ After payment, find Safari.\n→ Home Screen? Swipe up and select Safari.\n\n❸ Return to Sir Philip Korea.\n→ Tap ‘Open Sir Philip Korea App’.\n\nIf you cancel payment, tap Cancel once more to return to Sir Philip Korea.\nTo change the payment method, return to Sir Philip Korea and start again.\n\n────────────\n\n한국어\n\n❶ Safari에서 결제를 완료합니다.\n→ 아래 버튼을 눌러주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이면 아래에서 위로 밀어 Safari를 선택합니다.\n\n❸ 써필립코리아로 돌아옵니다.\n→ ‘써필립코리아 앱 열기’를 눌러주세요.\n\n결제를 취소한 경우 취소 버튼을 한 번 더 눌러 써필립코리아로 돌아와 주세요.\n다른 결제수단을 이용하려면 써필립코리아로 돌아와 다시 결제해 주세요.",
                     preferredStyle: .alert
                 )
 
@@ -766,16 +766,10 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // Build 123 recovery: the web checkout already entered its Processing state
-                    // before this native guide appeared. Always reload checkout so Cancel returns
-                    // to a fully interactive page instead of leaving a grey/frozen overlay.
-                    webView.stopLoading()
-                    let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
-                        ?? rootUrl.appendingPathComponent("checkout/")
-                    webView.load(URLRequest(
-                        url: checkoutURL,
-                        cachePolicy: .reloadIgnoringLocalCacheData
-                    ))
+                    // Build 124: Do not force-reload checkout here.
+                    // Preserve the original KG Inicis / CodeMShop cancellation flow so the user
+                    // can finish cancelling in the PG screen and return through the existing
+                    // payment-cancel callback (spkIsInicisCancelCallback).
                 })
 
                 alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
