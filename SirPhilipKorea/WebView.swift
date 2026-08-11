@@ -9,12 +9,13 @@ private weak var spkPaymentPopupViewController: UIViewController?
 private weak var spkPaymentPopupWebView: WKWebView?
 private weak var spkMainWebView: WKWebView?
 
-// SPK Build 132: Remember that a real-Safari card payment was started.
+// SPK Build 131: Remember that a real-Safari card payment was started.
 // This is used only to recover the app's checkout if the user comes back
 // from a cancelled/abandoned external payment and the old Processing overlay
 // is still frozen in the app WebView.
 private let spkSafariCardPaymentPendingKey = "spk_safari_card_payment_pending_v131"
 private let spkSafariCardPaymentURLKey = "spk_safari_card_payment_url_v131"
+private let spkSafariCardPaymentStartedAtKey = "spk_safari_card_payment_started_at_v133"
 
 // SPK v6.0: Detect KG Inicis receipt / cash-receipt pages opened from order details.
 // These pages use window.print() and popup navigation that do not work reliably in iOS WKWebView.
@@ -251,7 +252,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     spkMainWebView = webView
     setCustomCookie(webView: webView)
 
-    // SPK Build 132:
+    // SPK Build 133:
     // When the user returns from Safari/card-app while the original checkout is
     // still sitting in a grey Processing state, do not silently reload it.
     // Instead, show a native recovery choice:
@@ -273,6 +274,18 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
             return
         }
 
+        // Build 133: A successful external payment can finish in Safari and the user may
+        // return by selecting the Sir Philip Korea app directly instead of tapping the
+        // Safari "Open Sir Philip Korea App" button. In that case the app cannot receive
+        // a success deep-link, so do not immediately show a misleading cancellation card.
+        // Give Safari / the PG return flow a short grace period first. The recovery card
+        // remains available for genuinely cancelled or abandoned payments after that.
+        let startedAt = UserDefaults.standard.double(forKey: spkSafariCardPaymentStartedAtKey)
+        let elapsed = startedAt > 0 ? Date().timeIntervalSince1970 - startedAt : 999
+        if elapsed < 12.0 {
+            return
+        }
+
         let absolute = currentURL.absoluteString.lowercased()
 
         // A completed payment normally leaves checkout/order-pay and moves to
@@ -281,6 +294,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         guard absolute.contains("/checkout") || absolute.contains("order-pay") else {
             UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
             UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentURLKey)
+            UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentStartedAtKey)
             return
         }
 
@@ -299,151 +313,41 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
             guard refreshed.contains("/checkout") || refreshed.contains("order-pay") else {
                 UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
                 UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentURLKey)
+                UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentStartedAtKey)
                 spkPaymentRecoveryAlertVisible = false
                 return
             }
 
-            // SPK Build 132: Branded recovery card.
-            // Payment-state logic is unchanged from Build 131; only the recovery UI is customized.
-            let recoveryVC = UIViewController()
-            recoveryVC.modalPresentationStyle = .overFullScreen
-            recoveryVC.view.backgroundColor = UIColor.black.withAlphaComponent(0.42)
-
-            let card = UIView()
-            card.translatesAutoresizingMaskIntoConstraints = false
-            card.backgroundColor = UIColor(red: 1.0, green: 0.985, blue: 0.93, alpha: 1.0)
-            card.layer.cornerRadius = 24
-            card.layer.borderWidth = 2
-            card.layer.borderColor = UIColor(red: 0.88, green: 0.64, blue: 0.15, alpha: 1.0).cgColor
-            card.layer.shadowColor = UIColor.black.cgColor
-            card.layer.shadowOpacity = 0.24
-            card.layer.shadowRadius = 18
-            card.layer.shadowOffset = CGSize(width: 0, height: 8)
-
-            let badge = UILabel()
-            badge.translatesAutoresizingMaskIntoConstraints = false
-            badge.text = "S.P"
-            badge.textAlignment = .center
-            badge.font = .systemFont(ofSize: 18, weight: .black)
-            badge.textColor = UIColor(red: 0.08, green: 0.31, blue: 0.20, alpha: 1.0)
-            badge.backgroundColor = UIColor(red: 0.96, green: 0.77, blue: 0.18, alpha: 1.0)
-            badge.layer.cornerRadius = 24
-            badge.layer.masksToBounds = true
-
-            let titleLabel = UILabel()
-            titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            titleLabel.numberOfLines = 0
-            titleLabel.textAlignment = .center
-            titleLabel.font = .systemFont(ofSize: 21, weight: .bold)
-            titleLabel.textColor = UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1.0)
-            titleLabel.text = "Card payment\n카드결제"
-
-            let messageLabel = UILabel()
-            messageLabel.translatesAutoresizingMaskIntoConstraints = false
-            messageLabel.numberOfLines = 0
-            messageLabel.textAlignment = .center
-            messageLabel.font = .systemFont(ofSize: 14.5, weight: .regular)
-            messageLabel.textColor = UIColor(red: 0.30, green: 0.31, blue: 0.32, alpha: 1.0)
-            messageLabel.text = "Payment may still be open in Safari.\nSafari에서 결제가 계속 진행 중일 수 있습니다.\n\nIf you canceled the payment, return safely to checkout.\n결제를 취소했다면 결제창으로 안전하게 돌아가 주세요."
-
-            func makeRecoveryButton(_ title: String, background: UIColor, foreground: UIColor) -> UIButton {
-                let button = UIButton(type: .system)
-                button.translatesAutoresizingMaskIntoConstraints = false
-                button.setTitle(title, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 16.5, weight: .bold)
-                button.titleLabel?.numberOfLines = 2
-                button.titleLabel?.textAlignment = .center
-                button.setTitleColor(foreground, for: .normal)
-                button.backgroundColor = background
-                button.layer.cornerRadius = 13
-                return button
-            }
-
-            let safariButton = makeRecoveryButton(
-                "Return to Safari\nSafari로 돌아가기",
-                background: UIColor(red: 0.08, green: 0.45, blue: 0.82, alpha: 1.0),
-                foreground: .white
+            let alert = UIAlertController(
+                title: "Card payment / 카드결제",
+                message: "Payment may still be open in Safari.\nSafari에서 결제가 계속 진행 중일 수 있습니다.\n\nIf you canceled the payment, choose ‘I canceled payment’ to return to checkout.\n결제를 취소했다면 ‘결제 취소함’을 눌러 결제창으로 돌아가 주세요.",
+                preferredStyle: .alert
             )
-            let cancelButton = makeRecoveryButton(
-                "I canceled payment\n결제를 취소했습니다",
-                background: UIColor(red: 1.0, green: 0.94, blue: 0.94, alpha: 1.0),
-                foreground: UIColor(red: 0.82, green: 0.16, blue: 0.18, alpha: 1.0)
-            )
-            cancelButton.layer.borderWidth = 1
-            cancelButton.layer.borderColor = UIColor(red: 0.95, green: 0.68, blue: 0.68, alpha: 1.0).cgColor
 
-            let hintLabel = UILabel()
-            hintLabel.translatesAutoresizingMaskIntoConstraints = false
-            hintLabel.numberOfLines = 0
-            hintLabel.textAlignment = .center
-            hintLabel.font = .systemFont(ofSize: 12.5, weight: .regular)
-            hintLabel.textColor = UIColor(red: 0.45, green: 0.42, blue: 0.34, alpha: 1.0)
-            hintLabel.text = "Sir Philip Korea · Secure payment\n써필립코리아 · 안전결제"
-
-            recoveryVC.view.addSubview(card)
-            [badge, titleLabel, messageLabel, safariButton, cancelButton, hintLabel].forEach { card.addSubview($0) }
-
-            NSLayoutConstraint.activate([
-                card.leadingAnchor.constraint(equalTo: recoveryVC.view.leadingAnchor, constant: 24),
-                card.trailingAnchor.constraint(equalTo: recoveryVC.view.trailingAnchor, constant: -24),
-                card.centerYAnchor.constraint(equalTo: recoveryVC.view.centerYAnchor),
-
-                badge.topAnchor.constraint(equalTo: card.topAnchor, constant: 22),
-                badge.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-                badge.widthAnchor.constraint(equalToConstant: 48),
-                badge.heightAnchor.constraint(equalToConstant: 48),
-
-                titleLabel.topAnchor.constraint(equalTo: badge.bottomAnchor, constant: 13),
-                titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
-                titleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
-
-                messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 13),
-                messageLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 22),
-                messageLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
-
-                safariButton.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 22),
-                safariButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-                safariButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-                safariButton.heightAnchor.constraint(equalToConstant: 58),
-
-                cancelButton.topAnchor.constraint(equalTo: safariButton.bottomAnchor, constant: 10),
-                cancelButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-                cancelButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-                cancelButton.heightAnchor.constraint(equalToConstant: 58),
-
-                hintLabel.topAnchor.constraint(equalTo: cancelButton.bottomAnchor, constant: 14),
-                hintLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-                hintLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-                hintLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18)
-            ])
-
-            safariButton.addAction(UIAction { _ in
+            alert.addAction(UIAlertAction(title: "Return to Safari\nSafari로 돌아가기", style: .default) { _ in
                 spkPaymentRecoveryAlertVisible = false
-                recoveryVC.dismiss(animated: true) {
-                    if let saved = UserDefaults.standard.string(forKey: spkSafariCardPaymentURLKey),
-                       let safariURL = URL(string: saved) {
-                        UIApplication.shared.open(safariURL, options: [:], completionHandler: nil)
-                    }
-                }
-            }, for: .touchUpInside)
 
-            cancelButton.addAction(UIAction { _ in
+                if let saved = UserDefaults.standard.string(forKey: spkSafariCardPaymentURLKey),
+                   let safariURL = URL(string: saved) {
+                    UIApplication.shared.open(safariURL, options: [:], completionHandler: nil)
+                }
+            })
+
+            alert.addAction(UIAlertAction(title: "I canceled payment\n결제 취소함", style: .destructive) { _ in
                 spkPaymentRecoveryAlertVisible = false
                 UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
                 UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentURLKey)
+                UserDefaults.standard.removeObject(forKey: spkSafariCardPaymentStartedAtKey)
 
                 let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
                     ?? rootUrl.appendingPathComponent("checkout/")
+                webView.stopLoading()
+                webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
 
-                recoveryVC.dismiss(animated: true) {
-                    webView.stopLoading()
-                    webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
-                }
-
-                spkSendInicisDiagnostic("build132_cancelled_payment_checkout_recovered", [
+                spkSendInicisDiagnostic("build133_cancelled_payment_checkout_recovered", [
                     "url": spkDebugURLSummary(refreshedURL)
                 ])
-            }, for: .touchUpInside)
+            })
 
             if let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
@@ -454,7 +358,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
                 while let presented = presenter.presentedViewController {
                     presenter = presented
                 }
-                presenter.present(recoveryVC, animated: true)
+                presenter.present(alert, animated: true)
             } else {
                 spkPaymentRecoveryAlertVisible = false
             }
@@ -996,6 +900,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     // external payment as pending only after the user explicitly continues.
                     UserDefaults.standard.set(true, forKey: spkSafariCardPaymentPendingKey)
                     UserDefaults.standard.set(requestUrl.absoluteString, forKey: spkSafariCardPaymentURLKey)
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: spkSafariCardPaymentStartedAtKey)
 
                     spkSendInicisDiagnostic("safari_payment_entry_user_confirmed", [
                         "host": host,
