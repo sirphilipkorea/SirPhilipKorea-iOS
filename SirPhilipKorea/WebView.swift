@@ -266,7 +266,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
-    // SPK Build 140:
+    // SPK Build 141:
     // When Safari/card-app payment temporarily sends SirPhilipKorea to the
     // background, WooCommerce can leave its checkout blockUI/processing layer
     // frozen in the app WKWebView.  Returning to the app is NOT treated as a
@@ -784,7 +784,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 path.contains("/pg/inicis/proxy/payment_form")
 
             if isCodeMShopInicisPaymentEntry {
-                spkSendInicisDiagnostic("safari_payment_entry_intercepted_build140", [
+                spkSendInicisDiagnostic("safari_payment_entry_intercepted_build141", [
                     "webview": spkDebugWebViewName(webView),
                     "navigation_type": spkDebugNavigationType(navigationAction.navigationType),
                     "http_method": navigationAction.request.httpMethod ?? "",
@@ -792,7 +792,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                     "url": spkDebugURLSummary(requestUrl)
                 ])
 
-                // Build 140:
+                // Build 141:
                 // The user has ALREADY confirmed the pre-submit guide inside Checkout.
                 // Therefore do not show a second native guide here. Hand the payment
                 // entry directly to Safari.
@@ -803,7 +803,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: spkSafariCardPaymentStartedAtKey)
 
                 UIApplication.shared.open(requestUrl, options: [:]) { success in
-                    spkSendInicisDiagnostic("safari_payment_entry_open_result_build140", [
+                    spkSendInicisDiagnostic("safari_payment_entry_open_result_build141", [
                         "host": host,
                         "path": path,
                         "success": success
