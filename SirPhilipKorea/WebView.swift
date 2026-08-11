@@ -686,11 +686,11 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK Build 121: English/Korean sections separated with circled step numbers + recover checkout on Cancel.
+                // SPK Build 122: concise bilingual guide with emphasized step numbers and titles.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
-                    message: "English\n\n❶ Payment will continue in Safari.\nYou will be moved to Safari to proceed with payment.\n\n❷ Complete your payment in your card app and return to Safari.\n\n❸ Tap ‘Open Sir Philip Korea App’ button.\nTap the button in Safari to return to Sir Philip Korea app.\n\n────────────\n\n한국어\n\n❶ 결제를 위해 사파리로 이동합니다.\n\n❷ 결제 완료 후 사파리로 돌아옵니다.\n\n❸ ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
+                    message: "English\n\n❶ Continue to Safari and complete your card payment.\n→ Tap the button below to continue.\n\n❷ After payment, find Safari.\n→ If you see the Home Screen, swipe up to see your open apps.\n\n❸ Return to Sir Philip Korea.\n→ Open Safari and tap ‘Open Sir Philip Korea App’.\n\n────────────\n\n한국어\n\n❶ Safari에서 카드결제를 완료합니다.\n→ 아래 버튼을 눌러 결제를 진행해 주세요.\n\n❷ 결제 후 Safari를 찾아주세요.\n→ 바탕화면이 나오면 화면 아래에서 위로 밀어 실행 중인 앱을 확인합니다.\n\n❸ 써필립코리아 앱으로 돌아옵니다.\n→ Safari를 열고 ‘써필립코리아 앱 열기’ 버튼을 눌러주세요.",
                     preferredStyle: .alert
                 )
 
@@ -704,27 +704,60 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                 alert.view.layer.shadowRadius = 14
                 alert.view.layer.shadowOffset = CGSize(width: 0, height: 7)
 
-                // Make title and instructions easier to read without changing behavior.
                 if let title = alert.title {
                     let titleText = NSMutableAttributedString(string: title)
+                    let titleParagraph = NSMutableParagraphStyle()
+                    titleParagraph.alignment = .center
+                    titleParagraph.lineSpacing = 3
                     titleText.addAttributes([
                         .font: UIFont.systemFont(ofSize: 20, weight: .bold),
-                        .foregroundColor: UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1.0)
+                        .foregroundColor: UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1.0),
+                        .paragraphStyle: titleParagraph
                     ], range: NSRange(location: 0, length: titleText.length))
                     alert.setValue(titleText, forKey: "attributedTitle")
                 }
+
                 if let message = alert.message {
-                    let messageText = NSMutableAttributedString(string: message)
-                    let paragraph = NSMutableParagraphStyle()
-                    paragraph.alignment = .left
-                    paragraph.lineSpacing = 4
-                    paragraph.paragraphSpacing = 5
-                    messageText.addAttributes([
-                        .font: UIFont.systemFont(ofSize: 15.5, weight: .regular),
-                        .foregroundColor: UIColor(red: 0.28, green: 0.25, blue: 0.17, alpha: 1.0),
-                        .paragraphStyle: paragraph
-                    ], range: NSRange(location: 0, length: messageText.length))
-                    alert.setValue(messageText, forKey: "attributedMessage")
+                    let ns = message as NSString
+                    let styled = NSMutableAttributedString(string: message)
+                    let p = NSMutableParagraphStyle()
+                    p.alignment = .left
+                    p.lineSpacing = 4
+                    p.paragraphSpacing = 5
+                    styled.addAttributes([
+                        .font: UIFont.systemFont(ofSize: 13.6),
+                        .foregroundColor: UIColor(red: 0.38, green: 0.38, blue: 0.38, alpha: 1),
+                        .paragraphStyle: p
+                    ], range: NSRange(location: 0, length: styled.length))
+
+                    let green = UIColor(red: 0.08, green: 0.39, blue: 0.25, alpha: 1)
+                    let dark = UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1)
+                    for heading in ["English", "한국어"] {
+                        let r = ns.range(of: heading)
+                        if r.location != NSNotFound {
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15.5,weight:.bold), .foregroundColor:green], range:r)
+                        }
+                    }
+                    let steps = [
+                        "❶ Continue to Safari and complete your card payment.",
+                        "❷ After payment, find Safari.",
+                        "❸ Return to Sir Philip Korea.",
+                        "❶ Safari에서 카드결제를 완료합니다.",
+                        "❷ 결제 후 Safari를 찾아주세요.",
+                        "❸ 써필립코리아 앱으로 돌아옵니다."
+                    ]
+                    for s in steps {
+                        let r = ns.range(of:s)
+                        if r.location != NSNotFound {
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:15,weight:.bold), .foregroundColor:dark], range:r)
+                            styled.addAttributes([.font:UIFont.systemFont(ofSize:17,weight:.bold), .foregroundColor:green], range:NSRange(location:r.location,length:1))
+                        }
+                    }
+                    let divider = ns.range(of:"────────────")
+                    if divider.location != NSNotFound {
+                        styled.addAttribute(.foregroundColor, value: UIColor(red:0.76,green:0.55,blue:0.12,alpha:1), range:divider)
+                    }
+                    alert.setValue(styled, forKey:"attributedMessage")
                 }
 
                 alert.addAction(UIAlertAction(title: "Cancel / 취소", style: .cancel) { _ in
