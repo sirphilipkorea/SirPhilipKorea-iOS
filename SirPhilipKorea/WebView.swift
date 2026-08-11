@@ -9,6 +9,12 @@ private weak var spkPaymentPopupViewController: UIViewController?
 private weak var spkPaymentPopupWebView: WKWebView?
 private weak var spkMainWebView: WKWebView?
 
+// SPK Build 125: Remember that a real-Safari card payment was started.
+// This is used only to recover the app's checkout if the user comes back
+// from a cancelled/abandoned external payment and the old Processing overlay
+// is still frozen in the app WebView.
+private let spkSafariCardPaymentPendingKey = "spk_safari_card_payment_pending_v125"
+
 // SPK v6.0: Detect KG Inicis receipt / cash-receipt pages opened from order details.
 // These pages use window.print() and popup navigation that do not work reliably in iOS WKWebView.
 private func spkIsInicisReceiptURL(_ url: URL) -> Bool {
@@ -243,6 +249,79 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     let webView = WKWebView(frame: calcWebviewFrame(webviewView: container, toolbarView: nil), configuration: config)
     spkMainWebView = webView
     setCustomCookie(webView: webView)
+
+    // SPK Build 125: Safe recovery for the grey/frozen checkout left behind
+    // when a Safari/card-app payment is cancelled and the user returns directly
+    // to Sir Philip Korea.  We do NOT reload merely because the app became active.
+    // Recovery runs only when:
+    //   1) this app previously handed a card payment to Safari, and
+    //   2) the current app page is still checkout, and
+    //   3) the page visibly looks stuck in a Processing state.
+    NotificationCenter.default.addObserver(
+        forName: UIApplication.didBecomeActiveNotification,
+        object: nil,
+        queue: .main
+    ) { [weak webView] _ in
+        guard UserDefaults.standard.bool(forKey: spkSafariCardPaymentPendingKey),
+              let webView = webView,
+              let currentURL = webView.url else {
+            return
+        }
+
+        let absolute = currentURL.absoluteString.lowercased()
+        guard absolute.contains("/checkout") else {
+            // If WooCommerce has already moved to another page, do not interfere.
+            UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
+            return
+        }
+
+        let js = #"""
+        (function () {
+            var text = ((document.body && document.body.innerText) || '').toLowerCase();
+            var visible = function (el) {
+                if (!el) return false;
+                var s = window.getComputedStyle(el);
+                return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+            };
+            var selectors = [
+                '.blockUI.blockOverlay',
+                '.woocommerce .blockUI',
+                '.processing',
+                '[class*="processing"]',
+                '[id*="processing"]'
+            ];
+            var overlay = false;
+            for (var i = 0; i < selectors.length; i++) {
+                var nodes = document.querySelectorAll(selectors[i]);
+                for (var j = 0; j < nodes.length; j++) {
+                    if (visible(nodes[j])) { overlay = true; break; }
+                }
+                if (overlay) break;
+            }
+            var words = text.indexOf('processing') !== -1 ||
+                        text.indexOf('처리 중') !== -1 ||
+                        text.indexOf('처리중') !== -1 ||
+                        text.indexOf('주문 처리') !== -1;
+            return !!(overlay && words);
+        })();
+        """#
+
+        webView.evaluateJavaScript(js) { result, _ in
+            let isStuck = (result as? Bool) == true
+            guard isStuck else { return }
+
+            UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
+
+            let checkoutURL = URL(string: "/checkout/", relativeTo: rootUrl)?.absoluteURL
+                ?? rootUrl.appendingPathComponent("checkout/")
+            webView.stopLoading()
+            webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
+
+            spkSendInicisDiagnostic("build125_foreground_checkout_recovered", [
+                "url": spkDebugURLSummary(currentURL)
+            ])
+        }
+    }
 
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     webView.isHidden = true;
@@ -633,6 +712,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
         // Do not render its window.top.payment_fail() response in the Inicis page;
         // return the same WKWebView to WooCommerce checkout instead.
         if let requestUrl = navigationAction.request.url, spkIsInicisCancelCallback(requestUrl) {
+            UserDefaults.standard.set(false, forKey: spkSafariCardPaymentPendingKey)
             decisionHandler(.cancel)
             spkReturnToCheckoutAfterPaymentCancel(webView, presenter: self)
             return
@@ -686,7 +766,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK Build 124: unified Safari card-payment handoff + compact guide + safe cancel/retry recovery.
+                // SPK Build 125: Safari card-payment handoff + compact guide + foreground stuck-checkout recovery.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
@@ -766,13 +846,17 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // Build 124: Do not force-reload checkout here.
+                    // Build 125: Do not force-reload checkout here.
                     // Preserve the original KG Inicis / CodeMShop cancellation flow so the user
                     // can finish cancelling in the PG screen and return through the existing
                     // payment-cancel callback (spkIsInicisCancelCallback).
                 })
 
                 alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
+                    // Build 125: set the recovery flag only after the user explicitly
+                    // chooses to leave the app for the real Safari payment flow.
+                    UserDefaults.standard.set(true, forKey: spkSafariCardPaymentPendingKey)
+
                     spkSendInicisDiagnostic("safari_payment_entry_user_confirmed", [
                         "host": host,
                         "path": path
