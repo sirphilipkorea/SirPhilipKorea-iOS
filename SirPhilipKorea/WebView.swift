@@ -266,7 +266,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
-    // SPK Build 135:
+    // SPK Build 136:
     // When Safari/card-app payment temporarily sends SirPhilipKorea to the
     // background, WooCommerce can leave its checkout blockUI/processing layer
     // frozen in the app WKWebView.  Returning to the app is NOT treated as a
@@ -851,10 +851,95 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // Build 131: Do not force-reload checkout here.
-                    // Preserve the original KG Inicis / CodeMShop cancellation flow so the user
-                    // can finish cancelling in the PG screen and return through the existing
-                    // payment-cancel callback (spkIsInicisCancelCallback).
+                    // SPK Build 136:
+                    // The user cancelled BEFORE Safari / KG Inicis was opened.
+                    // At this moment WooCommerce has already put checkout into its
+                    // "processing" state, but there is no external PG session to cancel.
+                    // Never reload checkout here (that can disturb the cart/order session).
+                    // Instead, only release the stale WooCommerce/SPK processing UI so the
+                    // customer can immediately choose another payment method or try again.
+                    let releasePreSafariCancelUI = #"""
+                    (function () {
+                        try {
+                            if (window.jQuery) {
+                                var $ = window.jQuery;
+
+                                try { $('form.checkout').removeClass('processing'); } catch (e) {}
+                                try { $('.woocommerce-checkout').removeClass('processing'); } catch (e) {}
+                                try { $('body').removeClass('processing'); } catch (e) {}
+
+                                try { $('form.checkout').unblock(); } catch (e) {}
+                                try { $('.woocommerce-checkout').unblock(); } catch (e) {}
+                                try { $('body').unblock(); } catch (e) {}
+
+                                // WooCommerce normally performs this cleanup when checkout
+                                // receives an error response. Here navigation was intentionally
+                                // intercepted by the native app, so reproduce the harmless UI
+                                // reset without creating a new order or reloading checkout.
+                                try { $(document.body).trigger('checkout_error'); } catch (e) {}
+                            }
+
+                            document.querySelectorAll(
+                                '.blockUI.blockOverlay, .blockUI.blockMsg, .blockOverlay, ' +
+                                '.woocommerce-checkout .blockUI, form.checkout .blockUI'
+                            ).forEach(function (el) {
+                                try { el.remove(); } catch (e) { el.style.display = 'none'; }
+                            });
+
+                            // Re-enable controls disabled only by the interrupted checkout submit.
+                            document.querySelectorAll(
+                                'form.checkout button, form.checkout input[type="submit"], ' +
+                                '#place_order, button[name="woocommerce_checkout_place_order"]'
+                            ).forEach(function (el) {
+                                el.disabled = false;
+                                el.removeAttribute('disabled');
+                                el.removeAttribute('aria-busy');
+                                el.style.pointerEvents = '';
+                                el.style.opacity = '';
+                            });
+
+                            // Remove common full-screen "processing" wrappers only when their
+                            // text clearly identifies them as a temporary progress overlay.
+                            document.querySelectorAll('div,section').forEach(function (el) {
+                                var t = (el.innerText || '').trim().toLowerCase();
+                                if (!t) return;
+                                var looksLikeProgress =
+                                    (t.indexOf('processing') !== -1 ||
+                                     t.indexOf('처리 중') !== -1 ||
+                                     t.indexOf('처리중') !== -1 ||
+                                     t.indexOf('please wait') !== -1 ||
+                                     t.indexOf('잠시만 기다려') !== -1) &&
+                                    el.children.length < 20;
+                                if (!looksLikeProgress) return;
+
+                                var s = window.getComputedStyle(el);
+                                var z = parseInt(s.zIndex || '0', 10);
+                                var fixedLike = s.position === 'fixed' || s.position === 'absolute';
+                                if (fixedLike && z >= 1000) {
+                                    el.style.display = 'none';
+                                }
+                            });
+
+                            return 'released-pre-safari-cancel';
+                        } catch (e) {
+                            return 'error:' + String(e);
+                        }
+                    })();
+                    """#
+
+                    // Run more than once because the site's own delayed Processing overlay can
+                    // appear shortly after the native guide has been dismissed.
+                    [0.05, 0.35, 0.90].forEach { delay in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            webView.evaluateJavaScript(releasePreSafariCancelUI) { result, error in
+                                spkSendInicisDiagnostic("build136_pre_safari_cancel_ui_release", [
+                                    "delay": delay,
+                                    "result": String(describing: result ?? ""),
+                                    "error": error?.localizedDescription ?? ""
+                                ])
+                            }
+                        }
+                    }
                 })
 
                 alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
