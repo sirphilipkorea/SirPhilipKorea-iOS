@@ -266,6 +266,67 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
+    // SPK Build 135:
+    // When Safari/card-app payment temporarily sends SirPhilipKorea to the
+    // background, WooCommerce can leave its checkout blockUI/processing layer
+    // frozen in the app WKWebView.  Returning to the app is NOT treated as a
+    // cancellation or success here; we only release that stale visual lock.
+    // The real result is still decided exclusively by the existing Inicis
+    // cancel callback or sirphilipkorea://payment-complete deep link.
+    NotificationCenter.default.addObserver(
+        forName: UIApplication.didBecomeActiveNotification,
+        object: nil,
+        queue: .main
+    ) { [weak webView] _ in
+        guard UserDefaults.standard.bool(forKey: spkSafariCardPaymentPendingKey),
+              let webView = webView else { return }
+
+        let releaseFrozenCheckoutUI = #"""
+        (function () {
+            try {
+                var href = (window.location && window.location.href) ? window.location.href : '';
+                var isCheckout = /\/checkout\/?(?:[?#]|$)/i.test(href) || /\/order-pay\//i.test(href);
+                if (!isCheckout) { return 'not-checkout'; }
+
+                if (window.jQuery) {
+                    var $ = window.jQuery;
+                    try { $('form.checkout').removeClass('processing'); } catch (e) {}
+                    try { $('body').removeClass('processing'); } catch (e) {}
+                    try { $('.woocommerce-checkout').removeClass('processing'); } catch (e) {}
+                    try { $('form.checkout').unblock(); } catch (e) {}
+                    try { $('.woocommerce-checkout').unblock(); } catch (e) {}
+                    try { $('body').unblock(); } catch (e) {}
+                }
+
+                // jQuery blockUI nodes can survive an interrupted external-app handoff.
+                document.querySelectorAll('.blockUI.blockOverlay, .blockUI.blockMsg, .blockOverlay').forEach(function (el) {
+                    try { el.remove(); } catch (e) { el.style.display = 'none'; }
+                });
+
+                // Restore checkout controls that were disabled only by the stale
+                // processing state. WooCommerce will validate them again on use.
+                document.querySelectorAll('form.checkout button, form.checkout input[type=submit]').forEach(function (el) {
+                    if (el.getAttribute('aria-busy') === 'true') { el.removeAttribute('aria-busy'); }
+                });
+
+                return 'released';
+            } catch (e) {
+                return 'error:' + String(e);
+            }
+        })();
+        """#
+
+        // Give WebKit a moment to become interactive after foregrounding.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { [weak webView] in
+            webView?.evaluateJavaScript(releaseFrozenCheckoutUI) { result, error in
+                spkSendInicisDiagnostic("safari_payment_foreground_ui_release", [
+                    "result": String(describing: result ?? ""),
+                    "error": error?.localizedDescription ?? ""
+                ])
+            }
+        }
+    }
+
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     webView.isHidden = true;
     webView.navigationDelegate = WKND
