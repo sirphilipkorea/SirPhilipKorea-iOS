@@ -266,7 +266,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // This removes the false "Card payment / 카드결제" popup seen after a
     // completed Samsung/monimo payment when the app itself is selected.
 
-    // SPK Build 136:
+    // SPK Build 137:
     // When Safari/card-app payment temporarily sends SirPhilipKorea to the
     // background, WooCommerce can leave its checkout blockUI/processing layer
     // frozen in the app WKWebView.  Returning to the app is NOT treated as a
@@ -851,92 +851,66 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // SPK Build 136:
-                    // The user cancelled BEFORE Safari / KG Inicis was opened.
-                    // At this moment WooCommerce has already put checkout into its
-                    // "processing" state, but there is no external PG session to cancel.
-                    // Never reload checkout here (that can disturb the cart/order session).
-                    // Instead, only release the stale WooCommerce/SPK processing UI so the
-                    // customer can immediately choose another payment method or try again.
-                    let releasePreSafariCancelUI = #"""
+                    // SPK Build 137:
+                    // Safari has NOT been opened yet. Ask the WordPress bridge to
+                    // release WooCommerce's Processing/BlockUI state in the exact
+                    // page that initiated the payment. This keeps cart/address/
+                    // coupon/payment selections intact and avoids a full reload.
+                    let pluginCancelJS = #"""
                     (function () {
                         try {
-                            if (window.jQuery) {
-                                var $ = window.jQuery;
-
-                                try { $('form.checkout').removeClass('processing'); } catch (e) {}
-                                try { $('.woocommerce-checkout').removeClass('processing'); } catch (e) {}
-                                try { $('body').removeClass('processing'); } catch (e) {}
-
-                                try { $('form.checkout').unblock(); } catch (e) {}
-                                try { $('.woocommerce-checkout').unblock(); } catch (e) {}
-                                try { $('body').unblock(); } catch (e) {}
-
-                                // WooCommerce normally performs this cleanup when checkout
-                                // receives an error response. Here navigation was intentionally
-                                // intercepted by the native app, so reproduce the harmless UI
-                                // reset without creating a new order or reloading checkout.
-                                try { $(document.body).trigger('checkout_error'); } catch (e) {}
+                            if (window.SPKIOSCardSafariBridge &&
+                                typeof window.SPKIOSCardSafariBridge.cancelBeforeSafari === 'function') {
+                                return window.SPKIOSCardSafariBridge.cancelBeforeSafari();
                             }
-
-                            document.querySelectorAll(
-                                '.blockUI.blockOverlay, .blockUI.blockMsg, .blockOverlay, ' +
-                                '.woocommerce-checkout .blockUI, form.checkout .blockUI'
-                            ).forEach(function (el) {
-                                try { el.remove(); } catch (e) { el.style.display = 'none'; }
-                            });
-
-                            // Re-enable controls disabled only by the interrupted checkout submit.
-                            document.querySelectorAll(
-                                'form.checkout button, form.checkout input[type="submit"], ' +
-                                '#place_order, button[name="woocommerce_checkout_place_order"]'
-                            ).forEach(function (el) {
-                                el.disabled = false;
-                                el.removeAttribute('disabled');
-                                el.removeAttribute('aria-busy');
-                                el.style.pointerEvents = '';
-                                el.style.opacity = '';
-                            });
-
-                            // Remove common full-screen "processing" wrappers only when their
-                            // text clearly identifies them as a temporary progress overlay.
-                            document.querySelectorAll('div,section').forEach(function (el) {
-                                var t = (el.innerText || '').trim().toLowerCase();
-                                if (!t) return;
-                                var looksLikeProgress =
-                                    (t.indexOf('processing') !== -1 ||
-                                     t.indexOf('처리 중') !== -1 ||
-                                     t.indexOf('처리중') !== -1 ||
-                                     t.indexOf('please wait') !== -1 ||
-                                     t.indexOf('잠시만 기다려') !== -1) &&
-                                    el.children.length < 20;
-                                if (!looksLikeProgress) return;
-
-                                var s = window.getComputedStyle(el);
-                                var z = parseInt(s.zIndex || '0', 10);
-                                var fixedLike = s.position === 'fixed' || s.position === 'absolute';
-                                if (fixedLike && z >= 1000) {
-                                    el.style.display = 'none';
-                                }
-                            });
-
-                            return 'released-pre-safari-cancel';
+                            return 'bridge-missing';
                         } catch (e) {
-                            return 'error:' + String(e);
+                            return 'bridge-error:' + String(e);
                         }
                     })();
                     """#
 
-                    // Run more than once because the site's own delayed Processing overlay can
-                    // appear shortly after the native guide has been dismissed.
-                    [0.05, 0.35, 0.90].forEach { delay in
-                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            webView.evaluateJavaScript(releasePreSafariCancelUI) { result, error in
-                                spkSendInicisDiagnostic("build136_pre_safari_cancel_ui_release", [
-                                    "delay": delay,
-                                    "result": String(describing: result ?? ""),
-                                    "error": error?.localizedDescription ?? ""
-                                ])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        webView.evaluateJavaScript(pluginCancelJS) { result, error in
+                            let resultText = String(describing: result ?? "")
+                            spkSendInicisDiagnostic("build137_guide_cancel_bridge_result", [
+                                "result": resultText,
+                                "error": error?.localizedDescription ?? ""
+                            ])
+
+                            // Native fallback for cached/older PHP pages where the
+                            // v1.9.3 bridge is not yet present.
+                            if resultText.contains("bridge-missing") ||
+                               resultText.contains("bridge-error") ||
+                               error != nil {
+                                let fallbackJS = #"""
+                                (function () {
+                                    try {
+                                        if (window.jQuery) {
+                                            var $ = window.jQuery;
+                                            try { $('form.checkout').removeClass('processing').unblock(); } catch (e) {}
+                                            try { $('.woocommerce-checkout').removeClass('processing').unblock(); } catch (e) {}
+                                            try { $('body').removeClass('processing').unblock(); } catch (e) {}
+                                            try { $(document.body).trigger('update_checkout'); } catch (e) {}
+                                        }
+                                        document.querySelectorAll('.blockUI.blockOverlay,.blockUI.blockMsg,.blockOverlay').forEach(function(el){
+                                            try { el.remove(); } catch(e) { el.style.display='none'; }
+                                        });
+                                        var b = document.getElementById('place_order');
+                                        if (b) {
+                                            b.disabled = false;
+                                            b.removeAttribute('disabled');
+                                            b.removeAttribute('aria-busy');
+                                            b.style.pointerEvents = '';
+                                            b.style.opacity = '';
+                                        }
+                                        return 'native-fallback-released';
+                                    } catch (e) {
+                                        return 'native-fallback-error:' + String(e);
+                                    }
+                                })();
+                                """#
+                                webView.evaluateJavaScript(fallbackJS, completionHandler: nil)
                             }
                         }
                     }
