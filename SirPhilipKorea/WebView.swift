@@ -9,12 +9,12 @@ private weak var spkPaymentPopupViewController: UIViewController?
 private weak var spkPaymentPopupWebView: WKWebView?
 private weak var spkMainWebView: WKWebView?
 
-// SPK Build 126: Remember that a real-Safari card payment was started.
+// SPK Build 131: Remember that a real-Safari card payment was started.
 // This is used only to recover the app's checkout if the user comes back
 // from a cancelled/abandoned external payment and the old Processing overlay
 // is still frozen in the app WebView.
-private let spkSafariCardPaymentPendingKey = "spk_safari_card_payment_pending_v126"
-private let spkSafariCardPaymentURLKey = "spk_safari_card_payment_url_v126"
+private let spkSafariCardPaymentPendingKey = "spk_safari_card_payment_pending_v131"
+private let spkSafariCardPaymentURLKey = "spk_safari_card_payment_url_v131"
 
 // SPK v6.0: Detect KG Inicis receipt / cash-receipt pages opened from order details.
 // These pages use window.print() and popup navigation that do not work reliably in iOS WKWebView.
@@ -251,7 +251,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     spkMainWebView = webView
     setCustomCookie(webView: webView)
 
-    // SPK Build 126:
+    // SPK Build 131:
     // When the user returns from Safari/card-app while the original checkout is
     // still sitting in a grey Processing state, do not silently reload it.
     // Instead, show a native recovery choice:
@@ -290,7 +290,6 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
         // Give WKWebView a short moment to finish restoring its foreground state.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             guard UserDefaults.standard.bool(forKey: spkSafariCardPaymentPendingKey),
-                  let webView = webView,
                   let refreshedURL = webView.url else {
                 spkPaymentRecoveryAlertVisible = false
                 return
@@ -329,7 +328,7 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
                 webView.stopLoading()
                 webView.load(URLRequest(url: checkoutURL, cachePolicy: .reloadIgnoringLocalCacheData))
 
-                spkSendInicisDiagnostic("build126_cancelled_payment_checkout_recovered", [
+                spkSendInicisDiagnostic("build131_cancelled_payment_checkout_recovered", [
                     "url": spkDebugURLSummary(refreshedURL)
                 ])
             })
@@ -794,7 +793,7 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
 
                 decisionHandler(.cancel)
 
-                // SPK Build 126: Safari card-payment handoff + compact guide + foreground stuck-checkout recovery.
+                // SPK Build 131: Safari card-payment handoff + compact guide + foreground stuck-checkout recovery.
                 // Payment handoff/deep-link logic is intentionally unchanged from Build 118.
                 let alert = UIAlertController(
                     title: "Card payment guide\n카드결제 안내",
@@ -874,14 +873,14 @@ extension ViewController: WKUIDelegate, WKDownloadDelegate {
                         "path": path
                     ])
 
-                    // Build 126: Do not force-reload checkout here.
+                    // Build 131: Do not force-reload checkout here.
                     // Preserve the original KG Inicis / CodeMShop cancellation flow so the user
                     // can finish cancelling in the PG screen and return through the existing
                     // payment-cancel callback (spkIsInicisCancelCallback).
                 })
 
                 alert.addAction(UIAlertAction(title: "Continue to Safari\nSafari에서 결제", style: .default) { _ in
-                    // Build 126: remember the real Safari payment URL and mark the
+                    // Build 131: remember the real Safari payment URL and mark the
                     // external payment as pending only after the user explicitly continues.
                     UserDefaults.standard.set(true, forKey: spkSafariCardPaymentPendingKey)
                     UserDefaults.standard.set(requestUrl.absoluteString, forKey: spkSafariCardPaymentURLKey)
