@@ -1,0 +1,10 @@
+SPK iOS Build 143 Privacy Purpose String Fix
+
+Changes made:
+- Removed NSMicrophoneUsageDescription (microphone is not used).
+- Removed NSLocationWhenInUseUsageDescription (location is not used).
+- Revised NSCameraUsageDescription to clearly explain that camera access is used only when the user chooses to take and upload a photo for a product review.
+
+No other application functionality was intentionally changed.
+
+GitHub Actions already sets CURRENT_PROJECT_VERSION from github.run_number, so the next workflow run should receive its next build number automatically.
