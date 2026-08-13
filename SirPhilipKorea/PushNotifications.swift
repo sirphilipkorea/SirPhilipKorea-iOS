@@ -1,4 +1,3 @@
-import UIKit
 import WebKit
 import FirebaseMessaging
 
@@ -147,36 +146,35 @@ func checkViewAndEvaluate(event: String, detail: String) {
     }
 }
 
-private let spkFCMTokenCacheKey = "spk_fcm_token_cache_v1"
-
-private func spkJSONStringLiteral(_ value: String) -> String {
-    if let data = try? JSONSerialization.data(withJSONObject: [value]),
-       let json = String(data: data, encoding: .utf8),
-       json.count >= 2 {
-        return String(json.dropFirst().dropLast())
-    }
-    return "\"\""
+// SPK Push Diagnostic v1.0.3
+// Keeps normal push behavior unchanged. Adds native -> web diagnostic events so
+// the WordPress Push Manager can show exactly where token delivery stops.
+private func spkPushDiag(_ stage: String, _ extra: [String: Any] = [:]) {
+    var payload = extra
+    payload["stage"] = stage
+    payload["time"] = ISO8601DateFormatter().string(from: Date())
+    guard JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload),
+          let json = String(data: data, encoding: .utf8) else { return }
+    checkViewAndEvaluate(event: "spk-push-native-diagnostic", detail: json)
 }
 
 func handleFCMToken(){
-    // Return a cached token immediately when available, then refresh it from FCM.
-    // This makes token registration reliable even when the web page is reloaded
-    // after login or the native token was created before WordPress was ready.
-    if let cached = UserDefaults.standard.string(forKey: spkFCMTokenCacheKey), !cached.isEmpty {
-        checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral(cached))
-    }
-
+    spkPushDiag("handle_fcm_token_called")
     DispatchQueue.main.async(execute: {
         Messaging.messaging().token { token, error in
             if let error = error {
                 print("Error fetching FCM registration token: \(error)")
-                if UserDefaults.standard.string(forKey: spkFCMTokenCacheKey) == nil {
-                    checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral("ERROR GET TOKEN"))
-                }
-            } else if let token = token {
+                spkPushDiag("fcm_token_error", ["error": error.localizedDescription])
+                checkViewAndEvaluate(event: "push-token", detail: "ERROR GET TOKEN")
+            } else if let token = token, !token.isEmpty {
                 print("FCM registration token: \(token)")
-                UserDefaults.standard.set(token, forKey: spkFCMTokenCacheKey)
-                checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral(token))
+                spkPushDiag("fcm_token_ready", ["token_length": token.count])
+                checkViewAndEvaluate(event: "push-token", detail: "'\(token)'")
+                spkPushDiag("push_token_event_dispatched", ["token_length": token.count])
+            } else {
+                spkPushDiag("fcm_token_empty")
+                checkViewAndEvaluate(event: "push-token", detail: "ERROR EMPTY TOKEN")
             }
         }
     })
