@@ -38,6 +38,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         // [END register_for_notifications]
+
+        // SPK TEMPORARY DIAGNOSTIC:
+        // Show the FCM token only in a TestFlight installation, and only once per install.
+        // App Store customers will never enter this block.
+        let isTestFlight = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+        let diagnosticKey = "SPK_FCM_DIAGNOSTIC_SHOWN_V1"
+        if isTestFlight && !UserDefaults.standard.bool(forKey: diagnosticKey) {
+            UserDefaults.standard.set(true, forKey: diagnosticKey)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                showSPKTestFlightFCMToken()
+            }
+        }
+
         return true
       }
 
