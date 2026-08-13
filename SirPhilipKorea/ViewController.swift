@@ -4,6 +4,12 @@ import WebKit
 var webView: WKWebView! = nil
 
 class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteractionControllerDelegate {
+    // SPK Push Diagnostic v1.0.4.1
+    // Local helper so diagnostic calls in didFinish are always in scope.
+    private func spkPushDiag(_ message: String) {
+        print("[SPK Push] \(message)")
+    }
+
     enum LoadingMode {
         case defaultCachePolicy
         case forceCache
