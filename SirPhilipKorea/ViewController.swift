@@ -4,8 +4,7 @@ import WebKit
 var webView: WKWebView! = nil
 
 class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteractionControllerDelegate {
-    // SPK Push Diagnostic v1.0.4.1
-    // Local helper so diagnostic calls in didFinish are always in scope.
+    // SPK Push Diagnostic v1.0.4.2
     private func spkPushDiag(_ message: String) {
         print("[SPK Push] \(message)")
     }
@@ -170,10 +169,10 @@ class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteract
             // SPK Push Diagnostic/Fix v1.0.4
             // Do not depend only on JavaScript -> WKScriptMessageHandler.
             // After the main page is fully visible, ask Firebase for the token natively.
-            spkPushDiag("did_finish_native_token_request")
+            self.spkPushDiag("did_finish_native_token_request")
             handleFCMToken()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                spkPushDiag("did_finish_native_token_retry")
+                self.spkPushDiag("did_finish_native_token_retry")
                 handleFCMToken()
             }
         }
