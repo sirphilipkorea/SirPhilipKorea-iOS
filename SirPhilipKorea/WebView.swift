@@ -238,6 +238,16 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     userContentController.add(WKSMH, name: "push-permission-state")
     userContentController.add(WKSMH, name: "push-token")
 
+    // SPK Push Bridge v1.0.1: ask native Firebase code for the current FCM token
+    // after every main-frame page load. WordPress listens for the returned
+    // `push-token` CustomEvent and stores it against the logged-in account.
+    let spkPushTokenRequestScript = WKUserScript(
+        source: "try { if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers['push-token']) { window.webkit.messageHandlers['push-token'].postMessage('request'); } } catch (e) {}",
+        injectionTime: .atDocumentEnd,
+        forMainFrameOnly: true
+    )
+    userContentController.addUserScript(spkPushTokenRequestScript)
+
     config.userContentController = userContentController
 
     // SPK v6.6.1: Follow KG Inicis' official iOS WebView guidance.
