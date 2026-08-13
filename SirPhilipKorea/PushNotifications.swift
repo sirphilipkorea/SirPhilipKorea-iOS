@@ -1,3 +1,4 @@
+import UIKit
 import WebKit
 import FirebaseMessaging
 
@@ -183,3 +184,57 @@ func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
     }
     checkViewAndEvaluate(event: "push-notification-click", detail: json)
 }
+
+// MARK: - SPK TestFlight FCM Token Diagnostic
+// This helper is only used by the TestFlight-only call in AppDelegate.
+// It does not change normal push notification delivery.
+func showSPKTestFlightFCMToken() {
+    Messaging.messaging().token { token, error in
+        DispatchQueue.main.async {
+            let alert: UIAlertController
+
+            if let error = error {
+                alert = UIAlertController(
+                    title: "FCM Token Error / FCM 토큰 오류",
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK / 확인", style: .default))
+            } else if let token = token, !token.isEmpty {
+                alert = UIAlertController(
+                    title: "FCM Registration Token / FCM 등록 토큰",
+                    message: "Copy the token below and paste it into Firebase Test on device.\n아래 토큰을 복사해 Firebase 기기 테스트에 붙여넣으세요.",
+                    preferredStyle: .alert
+                )
+                alert.addTextField { textField in
+                    textField.text = token
+                    textField.clearButtonMode = .never
+                }
+                alert.addAction(UIAlertAction(title: "Copy / 복사", style: .default) { _ in
+                    UIPasteboard.general.string = token
+                })
+                alert.addAction(UIAlertAction(title: "Close / 닫기", style: .cancel))
+            } else {
+                alert = UIAlertController(
+                    title: "FCM Token / FCM 토큰",
+                    message: "The token is not ready yet. Close and reopen the TestFlight app.\n아직 토큰이 준비되지 않았습니다. TestFlight 앱을 닫았다가 다시 실행해 주세요.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK / 확인", style: .default))
+            }
+
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+                  let window = scene.windows.first(where: { $0.isKeyWindow }),
+                  let root = window.rootViewController else { return }
+
+            var presenter = root
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(alert, animated: true)
+        }
+    }
+}
+
