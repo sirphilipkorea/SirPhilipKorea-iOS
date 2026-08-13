@@ -86,14 +86,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       // This function is added here only for debugging purposes, and can be removed if swizzling is enabled.
       // If swizzling is disabled then this function must be implemented so that the APNs token can be paired to
       // the FCM registration token.
-//      func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+      func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         spkPushDiag("apns_token_received", ["token_bytes": deviceToken.count])
         spkSendNativeDiagnostic("apns_token_received", ["token_bytes": deviceToken.count])
-//        print("APNs token retrieved: \(deviceToken)")
-//
-//        // With swizzling disabled you must set the APNs token here.
-//        // Messaging.messaging().apnsToken = deviceToken
-//      }
+        print("APNs token retrieved: \(deviceToken)")
+
+        // Explicitly pair the APNs token with Firebase Messaging.
+        Messaging.messaging().apnsToken = deviceToken
+      }
     }
 
     // [START ios_10_message_handling]
