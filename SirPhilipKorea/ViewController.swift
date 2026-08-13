@@ -270,6 +270,8 @@ extension ViewController: WKScriptMessageHandler {
             handlePushState()
         }
         if message.name == "push-token" {
+            // SPK Push Diagnostic v1.0.3: proves WKScriptMessageHandler reached native code.
+            checkViewAndEvaluate(event: "spk-push-native-diagnostic", detail: "{\"stage\":\"viewcontroller_push_token_received\"}")
             handleFCMToken()
         }
   }
