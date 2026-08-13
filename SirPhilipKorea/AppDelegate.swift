@@ -11,8 +11,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication,
                        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 
-// TODO: if we're using Firebase, uncomment next string
-        //FirebaseApp.configure()
+// Firebase must be configured before Messaging is accessed.
+        FirebaseApp.configure()
 
         // [START set_messaging_delegate]
         Messaging.messaging().delegate = self
@@ -23,13 +23,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
    
         UNUserNotificationCenter.current().delegate = self
 
-      //  let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-      //  UNUserNotificationCenter.current().requestAuthorization(
-      //      options: authOptions,
-      //      completionHandler: {_, _ in })
-
-// TODO: if we're using Firebase, uncomment next string
-        // application.registerForRemoteNotifications()
+        let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+        UNUserNotificationCenter.current().requestAuthorization(options: authOptions) { granted, error in
+            if let error = error {
+                print("Push notification permission error: \(error.localizedDescription)")
+            }
+            guard granted else {
+                print("Push notification permission was not granted")
+                return
+            }
+            DispatchQueue.main.async {
+                application.registerForRemoteNotifications()
+            }
+        }
 
         // [END register_for_notifications]
         return true
