@@ -175,6 +175,13 @@ class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteract
                 self.spkPushDiag("did_finish_native_token_retry")
                 handleFCMToken()
             }
+
+            // SPK Push Fix v1.0.6: one final request after WordPress footer scripts
+            // and login/session state have had time to settle.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                self.spkPushDiag("did_finish_native_token_retry_5s")
+                handleFCMToken()
+            }
         }
     }
     
