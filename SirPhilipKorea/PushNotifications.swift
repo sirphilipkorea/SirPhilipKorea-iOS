@@ -146,7 +146,7 @@ func checkViewAndEvaluate(event: String, detail: String) {
     }
 }
 
-// SPK Push Diagnostic v1.0.3
+// SPK Push Diagnostic/Fix v1.0.4
 // Keeps normal push behavior unchanged. Adds native -> web diagnostic events so
 // the WordPress Push Manager can show exactly where token delivery stops.
 private func spkPushDiag(_ stage: String, _ extra: [String: Any] = [:]) {
