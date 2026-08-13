@@ -147,17 +147,38 @@ func checkViewAndEvaluate(event: String, detail: String) {
     }
 }
 
+private let spkFCMTokenCacheKey = "spk_fcm_token_cache_v1"
+
+private func spkJSONStringLiteral(_ value: String) -> String {
+    if let data = try? JSONSerialization.data(withJSONObject: [value]),
+       let json = String(data: data, encoding: .utf8),
+       json.count >= 2 {
+        return String(json.dropFirst().dropLast())
+    }
+    return "\"\""
+}
+
 func handleFCMToken(){
+    // Return a cached token immediately when available, then refresh it from FCM.
+    // This makes token registration reliable even when the web page is reloaded
+    // after login or the native token was created before WordPress was ready.
+    if let cached = UserDefaults.standard.string(forKey: spkFCMTokenCacheKey), !cached.isEmpty {
+        checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral(cached))
+    }
+
     DispatchQueue.main.async(execute: {
         Messaging.messaging().token { token, error in
             if let error = error {
                 print("Error fetching FCM registration token: \(error)")
-                checkViewAndEvaluate(event: "push-token", detail: "ERROR GET TOKEN")
+                if UserDefaults.standard.string(forKey: spkFCMTokenCacheKey) == nil {
+                    checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral("ERROR GET TOKEN"))
+                }
             } else if let token = token {
                 print("FCM registration token: \(token)")
-                checkViewAndEvaluate(event: "push-token", detail: "'\(token)'")
+                UserDefaults.standard.set(token, forKey: spkFCMTokenCacheKey)
+                checkViewAndEvaluate(event: "push-token", detail: spkJSONStringLiteral(token))
             }
-        }   
+        }
     })
 }
 
