@@ -242,7 +242,19 @@ func createWebView(container: UIView, WKSMH: WKScriptMessageHandler, WKND: WKNav
     // after every main-frame page load. WordPress listens for the returned
     // `push-token` CustomEvent and stores it against the logged-in account.
     let spkPushTokenRequestScript = WKUserScript(
-        source: "try { if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers['push-token']) { window.webkit.messageHandlers['push-token'].postMessage('request'); } } catch (e) {}",
+        source: """
+        try {
+          window.dispatchEvent(new CustomEvent('spk-push-native-diagnostic', {detail:{stage:'wk_script_document_end',time:new Date().toISOString()}}));
+          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers['push-token']) {
+            window.dispatchEvent(new CustomEvent('spk-push-native-diagnostic', {detail:{stage:'wk_push_handler_present',time:new Date().toISOString()}}));
+            window.webkit.messageHandlers['push-token'].postMessage('request');
+          } else {
+            window.dispatchEvent(new CustomEvent('spk-push-native-diagnostic', {detail:{stage:'wk_push_handler_missing',time:new Date().toISOString()}}));
+          }
+        } catch (e) {
+          window.dispatchEvent(new CustomEvent('spk-push-native-diagnostic', {detail:{stage:'wk_request_exception',error:String(e),time:new Date().toISOString()}}));
+        }
+        """,
         injectionTime: .atDocumentEnd,
         forMainFrameOnly: true
     )
