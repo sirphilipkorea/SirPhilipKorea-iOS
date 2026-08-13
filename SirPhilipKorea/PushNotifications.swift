@@ -159,7 +159,7 @@ private func spkPushDiag(_ stage: String, _ extra: [String: Any] = [:]) {
     checkViewAndEvaluate(event: "spk-push-native-diagnostic", detail: json)
 }
 
-// SPK Push Fix v1.0.5
+// SPK Push Fix v1.0.6
 // Deliver the FCM token directly to the WordPress bridge function.
 // The old `push-token` CustomEvent remains as a fallback for compatibility.
 private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
@@ -193,11 +193,12 @@ private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
         (function(){
             try {
                 var token = \(tokenJSON);
+                try { window.localStorage.setItem('spk_fcm_token_native', token); } catch (_) {}
                 if (typeof window.SPKPushReceiveToken === 'function') {
                     return window.SPKPushReceiveToken(token) ? 'direct-ok' : 'direct-rejected';
                 }
                 window.dispatchEvent(new CustomEvent('push-token', {detail: token}));
-                return 'event-fallback';
+                return 'cached-event-fallback';
             } catch (e) {
                 return 'error:' + String(e);
             }
@@ -221,7 +222,7 @@ private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
             spkPushDiag("direct_token_js_result", ["result": resultText, "token_length": token.count])
 
             // If the WP bridge was not ready yet, try again briefly.
-            if resultText.contains("event-fallback") && retry < 12 {
+            if resultText.contains("fallback") && retry < 12 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     spkDeliverFCMTokenToWordPress(token, retry: retry + 1)
                 }
