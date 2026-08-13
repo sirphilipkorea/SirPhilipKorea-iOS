@@ -147,19 +147,6 @@ func checkViewAndEvaluate(event: String, detail: String) {
     }
 }
 
-// SPK Push Diagnostic/Fix v1.0.4
-// Keeps normal push behavior unchanged. Adds native -> web diagnostic events so
-// the WordPress Push Manager can show exactly where token delivery stops.
-{
-    var payload = extra
-    payload["stage"] = stage
-    payload["time"] = ISO8601DateFormatter().string(from: Date())
-    guard JSONSerialization.isValidJSONObject(payload),
-          let data = try? JSONSerialization.data(withJSONObject: payload),
-          let json = String(data: data, encoding: .utf8) else { return }
-    checkViewAndEvaluate(event: "spk-push-native-diagnostic", detail: json)
-}
-
 // SPK Push Fix v1.0.6
 // Deliver the FCM token directly to the WordPress bridge function.
 // The old `push-token` CustomEvent remains as a fallback for compatibility.
@@ -226,62 +213,6 @@ private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
         }
     }
 }
-
-// SPK Independent Native Diagnostic v1.1.0
-// This diagnostic path intentionally does NOT depend on WKWebView, WordPress login,
-// JS bridge, cookies, or nonce. It sends only stage/error metadata, never the FCM token.
-{
-    guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else { return }
-    var req = URLRequest(url: url)
-    req.httpMethod = "POST"
-    req.timeoutInterval = 12
-    req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-
-    let data = (try? JSONSerialization.data(withJSONObject: detail, options: [])) ?? Data()
-    let detailText = String(data: data, encoding: .utf8) ?? "{}"
-    var c = URLComponents()
-    c.queryItems = [
-        URLQueryItem(name: "action", value: "spk_push_native_boot_diag"),
-        URLQueryItem(name: "diag_key", value: "9q66x9_VEpPgynb0HNwiZaIwkEdZQbu1"),
-        URLQueryItem(name: "stage", value: stage),
-        URLQueryItem(name: "detail", value: detailText)
-    ]
-    req.httpBody = c.percentEncodedQuery?.data(using: .utf8)
-    URLSession.shared.dataTask(with: req).resume()
-}
-
-// SPK Push Native Diagnostic v1.0.8
-{
-    DispatchQueue.main.async {
-        guard SirPhilipKorea.webView != nil else { return }
-        let js = "(function(){try{return window.SPKPushNativeConfig?JSON.stringify(window.SPKPushNativeConfig):'';}catch(e){return '';}})();"
-        SirPhilipKorea.webView.evaluateJavaScript(js) { result, _ in
-            guard let cfg=result as? String, !cfg.isEmpty,
-                  let data=cfg.data(using:.utf8),
-                  let obj=try? JSONSerialization.jsonObject(with:data) as? [String:Any],
-                  let ajax=obj["ajax"] as? String, let nonce=obj["nonce"] as? String,
-                  let url=URL(string:ajax) else {
-} }
-                return
-            }
-            SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                var req=URLRequest(url:url); req.httpMethod="POST"; req.timeoutInterval=12
-                req.setValue("application/x-www-form-urlencoded; charset=UTF-8",forHTTPHeaderField:"Content-Type")
-                for (k,v) in HTTPCookie.requestHeaderFields(with:cookies){ req.setValue(v,forHTTPHeaderField:k) }
-                let dd=(try? JSONSerialization.data(withJSONObject:detail)) ?? Data()
-                let ds=String(data:dd,encoding:.utf8) ?? "{}"
-                var c=URLComponents(); c.queryItems=[
-                    URLQueryItem(name:"action",value:"spk_push_native_diag"),
-                    URLQueryItem(name:"_ajax_nonce",value:nonce),
-                    URLQueryItem(name:"stage",value:stage),
-                    URLQueryItem(name:"detail",value:ds)]
-                req.httpBody=c.percentEncodedQuery?.data(using:.utf8)
-                URLSession.shared.dataTask(with:req).resume()
-            }
-        }
-    }
-}
-
 
 // SPK Push Fix v1.0.7
 // Secure native registration path:
