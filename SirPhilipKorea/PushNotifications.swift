@@ -336,17 +336,52 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
     }
 }
 
+// SPK Push Native Diagnostic v1.0.8
+func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], retry: Int = 0) {
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil else { return }
+        let js = "(function(){try{return window.SPKPushNativeConfig?JSON.stringify(window.SPKPushNativeConfig):'';}catch(e){return '';}})();"
+        SirPhilipKorea.webView.evaluateJavaScript(js) { result, _ in
+            guard let cfg=result as? String, !cfg.isEmpty,
+                  let data=cfg.data(using:.utf8),
+                  let obj=try? JSONSerialization.jsonObject(with:data) as? [String:Any],
+                  let ajax=obj["ajax"] as? String, let nonce=obj["nonce"] as? String,
+                  let url=URL(string:ajax) else {
+                if retry < 12 { DispatchQueue.main.asyncAfter(deadline:.now()+0.75){ spkSendNativeDiagnostic(stage,detail,retry:retry+1) } }
+                return
+            }
+            SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                var req=URLRequest(url:url); req.httpMethod="POST"; req.timeoutInterval=12
+                req.setValue("application/x-www-form-urlencoded; charset=UTF-8",forHTTPHeaderField:"Content-Type")
+                for (k,v) in HTTPCookie.requestHeaderFields(with:cookies){ req.setValue(v,forHTTPHeaderField:k) }
+                let dd=(try? JSONSerialization.data(withJSONObject:detail)) ?? Data()
+                let ds=String(data:dd,encoding:.utf8) ?? "{}"
+                var c=URLComponents(); c.queryItems=[
+                    URLQueryItem(name:"action",value:"spk_push_native_diag"),
+                    URLQueryItem(name:"_ajax_nonce",value:nonce),
+                    URLQueryItem(name:"stage",value:stage),
+                    URLQueryItem(name:"detail",value:ds)]
+                req.httpBody=c.percentEncodedQuery?.data(using:.utf8)
+                URLSession.shared.dataTask(with:req).resume()
+            }
+        }
+    }
+}
+
 func handleFCMToken(){
     spkPushDiag("handle_fcm_token_called")
+    spkSendNativeDiagnostic("handle_fcm_token_called", ["remote_registered": UIApplication.shared.isRegisteredForRemoteNotifications])
     DispatchQueue.main.async(execute: {
         Messaging.messaging().token { token, error in
             if let error = error {
                 print("Error fetching FCM registration token: \(error)")
                 spkPushDiag("fcm_token_error", ["error": error.localizedDescription])
+                spkSendNativeDiagnostic("fcm_token_error", ["error": error.localizedDescription])
                 checkViewAndEvaluate(event: "push-token", detail: "ERROR GET TOKEN")
             } else if let token = token, !token.isEmpty {
                 print("FCM registration token: \(token)")
                 spkPushDiag("fcm_token_ready", ["token_length": token.count])
+                spkSendNativeDiagnostic("fcm_token_ready", ["token_length": token.count])
 
                 // Primary v1.0.7 path: native HTTPS POST with WKWebView login cookies.
                 spkRegisterFCMTokenDirectly(token)
@@ -357,6 +392,7 @@ func handleFCMToken(){
                 spkPushDiag("direct_token_delivery_started", ["token_length": token.count])
             } else {
                 spkPushDiag("fcm_token_empty")
+                spkSendNativeDiagnostic("fcm_token_empty")
                 checkViewAndEvaluate(event: "push-token", detail: "ERROR EMPTY TOKEN")
             }
         }
