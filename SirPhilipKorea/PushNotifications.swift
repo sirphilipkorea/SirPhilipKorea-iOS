@@ -336,6 +336,29 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
     }
 }
 
+// SPK Independent Native Diagnostic v1.1.0
+// This diagnostic path intentionally does NOT depend on WKWebView, WordPress login,
+// JS bridge, cookies, or nonce. It sends only stage/error metadata, never the FCM token.
+func spkSendIndependentDiagnostic(_ stage: String, _ detail: [String: Any] = [:]) {
+    guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else { return }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.timeoutInterval = 12
+    req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+
+    let data = (try? JSONSerialization.data(withJSONObject: detail, options: [])) ?? Data()
+    let detailText = String(data: data, encoding: .utf8) ?? "{}"
+    var c = URLComponents()
+    c.queryItems = [
+        URLQueryItem(name: "action", value: "spk_push_native_boot_diag"),
+        URLQueryItem(name: "diag_key", value: "9q66x9_VEpPgynb0HNwiZaIwkEdZQbu1"),
+        URLQueryItem(name: "stage", value: stage),
+        URLQueryItem(name: "detail", value: detailText)
+    ]
+    req.httpBody = c.percentEncodedQuery?.data(using: .utf8)
+    URLSession.shared.dataTask(with: req).resume()
+}
+
 // SPK Push Native Diagnostic v1.0.8
 func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], retry: Int = 0) {
     DispatchQueue.main.async {
@@ -370,17 +393,20 @@ func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], ret
 
 func handleFCMToken(){
     spkPushDiag("handle_fcm_token_called")
+    spkSendIndependentDiagnostic("handle_fcm_token_called", ["remote_registered": UIApplication.shared.isRegisteredForRemoteNotifications])
     spkSendNativeDiagnostic("handle_fcm_token_called", ["remote_registered": UIApplication.shared.isRegisteredForRemoteNotifications])
     DispatchQueue.main.async(execute: {
         Messaging.messaging().token { token, error in
             if let error = error {
                 print("Error fetching FCM registration token: \(error)")
                 spkPushDiag("fcm_token_error", ["error": error.localizedDescription])
+                spkSendIndependentDiagnostic("fcm_token_error", ["error": error.localizedDescription])
                 spkSendNativeDiagnostic("fcm_token_error", ["error": error.localizedDescription])
                 checkViewAndEvaluate(event: "push-token", detail: "ERROR GET TOKEN")
             } else if let token = token, !token.isEmpty {
                 print("FCM registration token: \(token)")
                 spkPushDiag("fcm_token_ready", ["token_length": token.count])
+                spkSendIndependentDiagnostic("fcm_token_ready", ["token_length": token.count])
                 spkSendNativeDiagnostic("fcm_token_ready", ["token_length": token.count])
 
                 // Primary v1.0.7 path: native HTTPS POST with WKWebView login cookies.
@@ -392,6 +418,7 @@ func handleFCMToken(){
                 spkPushDiag("direct_token_delivery_started", ["token_length": token.count])
             } else {
                 spkPushDiag("fcm_token_empty")
+                spkSendIndependentDiagnostic("fcm_token_empty")
                 spkSendNativeDiagnostic("fcm_token_empty")
                 checkViewAndEvaluate(event: "push-token", detail: "ERROR EMPTY TOKEN")
             }
