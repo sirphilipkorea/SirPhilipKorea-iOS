@@ -160,6 +160,16 @@ class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteract
             self.setProgress(0.0, false)
             
             self.overrideUIStyle()
+
+            // SPK Push Diagnostic/Fix v1.0.4
+            // Do not depend only on JavaScript -> WKScriptMessageHandler.
+            // After the main page is fully visible, ask Firebase for the token natively.
+            spkPushDiag("did_finish_native_token_request")
+            handleFCMToken()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                spkPushDiag("did_finish_native_token_retry")
+                handleFCMToken()
+            }
         }
     }
     
