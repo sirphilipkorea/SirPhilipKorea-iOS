@@ -78,7 +78,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
       // [END receive_message]
       func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        spkPushDiag("apns_registration_failed", ["error": error.localizedDescription])
         spkSendNativeDiagnostic("apns_registration_failed", ["error": error.localizedDescription])
         print("Unable to register for remote notifications: \(error.localizedDescription)")
       }
@@ -87,7 +86,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       // If swizzling is disabled then this function must be implemented so that the APNs token can be paired to
       // the FCM registration token.
       func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        spkPushDiag("apns_token_received", ["token_bytes": deviceToken.count])
         spkSendNativeDiagnostic("apns_token_received", ["token_bytes": deviceToken.count])
         print("APNs token retrieved: \(deviceToken)")
 
