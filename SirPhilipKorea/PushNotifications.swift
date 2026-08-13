@@ -294,90 +294,79 @@ func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], ret
 // 2) Copy the WKWebView login cookies.
 // 3) POST the FCM token directly to admin-ajax.php.
 // This does NOT depend on window.webkit.messageHandlers['push-token'].
-private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
+private var spkLastNativeRegisteredToken: String = ""
+private var spkNativeRegistrationInFlight = false
+
+private func spkRegisterFCMTokenDirectly(_ token: String) {
     guard !token.isEmpty else { return }
 
-    // v1.1.2: Do NOT call evaluateJavaScript here.
-    // The previous v1.1.1 path could fail under WKAppBoundDomains.
+    // v1.1.3 stability: one request only. No retry loop and no JavaScript evaluation.
+    if spkNativeRegistrationInFlight || spkLastNativeRegisteredToken == token { return }
+    spkNativeRegistrationInFlight = true
+
     guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else {
-        spkSendIndependentDiagnostic("token_register_bad_url")
+        spkNativeRegistrationInFlight = false
         return
     }
 
     DispatchQueue.main.async {
         guard SirPhilipKorea.webView != nil else {
-            spkSendIndependentDiagnostic("token_register_webview_nil")
+            spkNativeRegistrationInFlight = false
             return
         }
 
         SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
             let siteCookies = cookies.filter {
-                guard let domain = $0.domain.lowercased() as String? else { return false }
+                let domain = $0.domain.lowercased()
                 return domain == "sirphilipkorea.com" || domain.hasSuffix(".sirphilipkorea.com")
             }
 
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.timeoutInterval = 15
+            request.timeoutInterval = 8
             request.setValue("application/x-www-form-urlencoded; charset=UTF-8",
                              forHTTPHeaderField: "Content-Type")
             request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
-
             for (key, value) in HTTPCookie.requestHeaderFields(with: siteCookies) {
                 request.setValue(value, forHTTPHeaderField: key)
             }
 
-            // v1.1.2 intentionally uses the existing authenticated WordPress cookies.
-            // The server must derive the WordPress user from that session.
             var components = URLComponents()
             components.queryItems = [
-                URLQueryItem(name: "action", value: "spk_register_fcm_token"),
+                URLQueryItem(name: "action", value: "spk_register_fcm_token_native"),
                 URLQueryItem(name: "token", value: token)
             ]
             request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
-            spkSendIndependentDiagnostic("token_register_cookie_post_started", [
-                "cookie_count": siteCookies.count,
-                "token_length": token.count,
-                "retry": retry
-            ])
-
             URLSession.shared.dataTask(with: request) { data, response, error in
+                defer { spkNativeRegistrationInFlight = false }
+
                 if let error = error {
-                    spkSendIndependentDiagnostic("token_register_post_error", [
-                        "error": error.localizedDescription,
-                        "retry": retry
+                    spkSendIndependentDiagnostic("token_register_native_network_error", [
+                        "error": error.localizedDescription
                     ])
-                    if retry < 5 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                        }
-                    }
                     return
                 }
 
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                let success = status == 200 &&
-                              body.contains("\"success\":true") &&
-                              body.contains("\"stored\":true")
+                let stored = status == 200 &&
+                             body.contains("\"success\":true") &&
+                             body.contains("\"stored\":true")
 
-                if success {
+                if stored {
+                    spkLastNativeRegisteredToken = token
                     spkSendIndependentDiagnostic("token_register_stored", [
                         "http_status": status,
                         "token_length": token.count
                     ])
                 } else {
-                    spkSendIndependentDiagnostic("token_register_rejected", [
+                    // One diagnostic only; do not retry automatically.
+                    spkSendIndependentDiagnostic("token_register_native_rejected", [
                         "http_status": status,
                         "response_length": body.count,
-                        "retry": retry
+                        "cookie_count": siteCookies.count
                     ])
-                    if retry < 5 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                        }
-                    }
                 }
             }.resume()
         }
@@ -404,9 +393,6 @@ func handleFCMToken(){
 
                 // Primary v1.0.7 path: native HTTPS POST with WKWebView login cookies.
                 spkRegisterFCMTokenDirectly(token)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    spkRegisterFCMTokenDirectly(token)
-                }
                 spkPushDiag("native_ajax_registration_started", ["token_length": token.count])
 
                 // Keep v1.0.6 JS/localStorage delivery only as a compatibility fallback.
