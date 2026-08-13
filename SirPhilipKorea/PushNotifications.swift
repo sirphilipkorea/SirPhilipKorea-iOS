@@ -1,4 +1,5 @@
 import WebKit
+import Foundation
 import FirebaseMessaging
 
 class SubscribeMessage {
@@ -231,6 +232,110 @@ private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
     }
 }
 
+// SPK Push Fix v1.0.7
+// Secure native registration path:
+// 1) Read WordPress AJAX URL + nonce from the authenticated WKWebView.
+// 2) Copy the WKWebView login cookies.
+// 3) POST the FCM token directly to admin-ajax.php.
+// This does NOT depend on window.webkit.messageHandlers['push-token'].
+private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
+    guard !token.isEmpty else { return }
+
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil else {
+            spkPushDiag("native_ajax_webview_nil")
+            return
+        }
+
+        let configJS = """
+        (function(){
+            try {
+                if (!window.SPKPushNativeConfig) return '';
+                return JSON.stringify(window.SPKPushNativeConfig);
+            } catch (e) { return ''; }
+        })();
+        """
+
+        SirPhilipKorea.webView.evaluateJavaScript(configJS) { result, error in
+            if let error = error {
+                spkPushDiag("native_ajax_config_js_error", ["error": error.localizedDescription])
+                if retry < 12 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                        spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                    }
+                }
+                return
+            }
+
+            guard let json = result as? String, !json.isEmpty,
+                  let data = json.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let ajax = obj["ajax"] as? String,
+                  let nonce = obj["nonce"] as? String,
+                  let userId = obj["userId"] as? Int,
+                  userId > 0,
+                  let url = URL(string: ajax) else {
+                spkPushDiag("native_ajax_config_not_ready", ["retry": retry])
+                if retry < 12 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                        spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                    }
+                }
+                return
+            }
+
+            SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.timeoutInterval = 15
+                request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+
+                let cookieHeader = HTTPCookie.requestHeaderFields(with: cookies)
+                for (key, value) in cookieHeader {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+
+                var components = URLComponents()
+                components.queryItems = [
+                    URLQueryItem(name: "action", value: "spk_register_fcm_token"),
+                    URLQueryItem(name: "_ajax_nonce", value: nonce),
+                    URLQueryItem(name: "token", value: token)
+                ]
+                request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
+
+                spkPushDiag("native_ajax_post_started", [
+                    "user_id": userId,
+                    "cookie_count": cookies.count,
+                    "token_length": token.count
+                ])
+
+                URLSession.shared.dataTask(with: request) { data, response, error in
+                    if let error = error {
+                        spkPushDiag("native_ajax_post_error", ["error": error.localizedDescription])
+                        return
+                    }
+
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    let success = body.contains("\"success\":true") && body.contains("\"stored\":true")
+
+                    spkPushDiag(success ? "native_ajax_token_stored" : "native_ajax_token_failed", [
+                        "http_status": status,
+                        "response_length": body.count
+                    ])
+
+                    if !success && retry < 4 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                        }
+                    }
+                }.resume()
+            }
+        }
+    }
+}
+
 func handleFCMToken(){
     spkPushDiag("handle_fcm_token_called")
     DispatchQueue.main.async(execute: {
@@ -242,6 +347,12 @@ func handleFCMToken(){
             } else if let token = token, !token.isEmpty {
                 print("FCM registration token: \(token)")
                 spkPushDiag("fcm_token_ready", ["token_length": token.count])
+
+                // Primary v1.0.7 path: native HTTPS POST with WKWebView login cookies.
+                spkRegisterFCMTokenDirectly(token)
+                spkPushDiag("native_ajax_registration_started", ["token_length": token.count])
+
+                // Keep v1.0.6 JS/localStorage delivery only as a compatibility fallback.
                 spkDeliverFCMTokenToWordPress(token)
                 spkPushDiag("direct_token_delivery_started", ["token_length": token.count])
             } else {
