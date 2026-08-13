@@ -13,6 +13,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 // Firebase must be configured before Messaging is accessed.
         FirebaseApp.configure()
+        spkSendIndependentDiagnostic("app_launched_firebase_configured")
 
         // [START set_messaging_delegate]
         Messaging.messaging().delegate = self
@@ -27,7 +28,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         UNUserNotificationCenter.current().requestAuthorization(options: authOptions) { granted, error in
             if let error = error {
                 print("Push notification permission error: \(error.localizedDescription)")
+                spkSendIndependentDiagnostic("notification_permission_error", ["error": error.localizedDescription])
             }
+            spkSendIndependentDiagnostic(granted ? "notification_permission_granted" : "notification_permission_denied")
             guard granted else {
                 print("Push notification permission was not granted")
                 return
@@ -78,6 +81,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
       // [END receive_message]
       func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        spkSendIndependentDiagnostic("apns_registration_failed", ["error": error.localizedDescription])
         spkSendNativeDiagnostic("apns_registration_failed", ["error": error.localizedDescription])
         print("Unable to register for remote notifications: \(error.localizedDescription)")
       }
@@ -86,6 +90,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       // If swizzling is disabled then this function must be implemented so that the APNs token can be paired to
       // the FCM registration token.
       func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        spkSendIndependentDiagnostic("apns_token_received", ["token_bytes": deviceToken.count])
         spkSendNativeDiagnostic("apns_token_received", ["token_bytes": deviceToken.count])
         print("APNs token retrieved: \(deviceToken)")
 
