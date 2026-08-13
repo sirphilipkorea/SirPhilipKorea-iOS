@@ -297,115 +297,89 @@ func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], ret
 private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
     guard !token.isEmpty else { return }
 
+    // v1.1.2: Do NOT call evaluateJavaScript here.
+    // The previous v1.1.1 path could fail under WKAppBoundDomains.
+    guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else {
+        spkSendIndependentDiagnostic("token_register_bad_url")
+        return
+    }
+
     DispatchQueue.main.async {
         guard SirPhilipKorea.webView != nil else {
             spkSendIndependentDiagnostic("token_register_webview_nil")
             return
         }
 
-        let configJS = """
-        (function(){
-            try {
-                if (!window.SPKPushNativeConfig) return '';
-                return JSON.stringify(window.SPKPushNativeConfig);
-            } catch (e) { return ''; }
-        })();
-        """
-
-        SirPhilipKorea.webView.evaluateJavaScript(configJS) { result, error in
-            if let error = error {
-                spkSendIndependentDiagnostic("token_register_config_js_error", [
-                    "error": error.localizedDescription,
-                    "retry": retry
-                ])
-                if retry < 16 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
-                        spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                    }
-                }
-                return
+        SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            let siteCookies = cookies.filter {
+                guard let domain = $0.domain.lowercased() as String? else { return false }
+                return domain == "sirphilipkorea.com" || domain.hasSuffix(".sirphilipkorea.com")
             }
 
-            guard let json = result as? String, !json.isEmpty,
-                  let data = json.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let ajax = obj["ajax"] as? String,
-                  let nonce = obj["nonce"] as? String,
-                  let url = URL(string: ajax) else {
-                spkSendIndependentDiagnostic("token_register_config_not_ready", ["retry": retry])
-                if retry < 16 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
-                        spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                    }
-                }
-                return
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 15
+            request.setValue("application/x-www-form-urlencoded; charset=UTF-8",
+                             forHTTPHeaderField: "Content-Type")
+            request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+
+            for (key, value) in HTTPCookie.requestHeaderFields(with: siteCookies) {
+                request.setValue(value, forHTTPHeaderField: key)
             }
 
-            SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.timeoutInterval = 15
-                request.setValue("application/x-www-form-urlencoded; charset=UTF-8",
-                                 forHTTPHeaderField: "Content-Type")
-                request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+            // v1.1.2 intentionally uses the existing authenticated WordPress cookies.
+            // The server must derive the WordPress user from that session.
+            var components = URLComponents()
+            components.queryItems = [
+                URLQueryItem(name: "action", value: "spk_register_fcm_token"),
+                URLQueryItem(name: "token", value: token)
+            ]
+            request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
-                for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-                    request.setValue(value, forHTTPHeaderField: key)
-                }
+            spkSendIndependentDiagnostic("token_register_cookie_post_started", [
+                "cookie_count": siteCookies.count,
+                "token_length": token.count,
+                "retry": retry
+            ])
 
-                var components = URLComponents()
-                components.queryItems = [
-                    URLQueryItem(name: "action", value: "spk_register_fcm_token"),
-                    URLQueryItem(name: "_ajax_nonce", value: nonce),
-                    URLQueryItem(name: "token", value: token)
-                ]
-                request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-
-                spkSendIndependentDiagnostic("token_register_post_started", [
-                    "cookie_count": cookies.count,
-                    "token_length": token.count,
-                    "retry": retry
-                ])
-
-                URLSession.shared.dataTask(with: request) { data, response, error in
-                    if let error = error {
-                        spkSendIndependentDiagnostic("token_register_post_error", [
-                            "error": error.localizedDescription,
-                            "retry": retry
-                        ])
-                        if retry < 5 {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                            }
-                        }
-                        return
-                    }
-
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                    let success = status == 200 &&
-                                  body.contains("\"success\":true") &&
-                                  body.contains("\"stored\":true")
-
-                    if success {
-                        spkSendIndependentDiagnostic("token_register_stored", [
-                            "http_status": status,
-                            "token_length": token.count
-                        ])
-                    } else {
-                        spkSendIndependentDiagnostic("token_register_rejected", [
-                            "http_status": status,
-                            "response_length": body.count,
-                            "retry": retry
-                        ])
-                        if retry < 5 {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                spkRegisterFCMTokenDirectly(token, retry: retry + 1)
-                            }
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    spkSendIndependentDiagnostic("token_register_post_error", [
+                        "error": error.localizedDescription,
+                        "retry": retry
+                    ])
+                    if retry < 5 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
                         }
                     }
-                }.resume()
-            }
+                    return
+                }
+
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                let success = status == 200 &&
+                              body.contains("\"success\":true") &&
+                              body.contains("\"stored\":true")
+
+                if success {
+                    spkSendIndependentDiagnostic("token_register_stored", [
+                        "http_status": status,
+                        "token_length": token.count
+                    ])
+                } else {
+                    spkSendIndependentDiagnostic("token_register_rejected", [
+                        "http_status": status,
+                        "response_length": body.count,
+                        "retry": retry
+                    ])
+                    if retry < 5 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                        }
+                    }
+                }
+            }.resume()
         }
     }
 }
