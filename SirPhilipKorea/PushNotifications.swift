@@ -159,6 +159,77 @@ private func spkPushDiag(_ stage: String, _ extra: [String: Any] = [:]) {
     checkViewAndEvaluate(event: "spk-push-native-diagnostic", detail: json)
 }
 
+// SPK Push Fix v1.0.5
+// Deliver the FCM token directly to the WordPress bridge function.
+// The old `push-token` CustomEvent remains as a fallback for compatibility.
+private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
+    guard !token.isEmpty else { return }
+
+    guard let tokenData = try? JSONSerialization.data(withJSONObject: token, options: [.fragmentsAllowed]),
+          let tokenJSON = String(data: tokenData, encoding: .utf8) else {
+        spkPushDiag("direct_token_json_encode_error")
+        return
+    }
+
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil else {
+            spkPushDiag("direct_token_webview_nil")
+            return
+        }
+
+        if SirPhilipKorea.webView.isLoading || SirPhilipKorea.webView.isHidden {
+            if retry < 12 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    spkDeliverFCMTokenToWordPress(token, retry: retry + 1)
+                }
+            } else {
+                spkPushDiag("direct_token_webview_not_ready")
+                checkViewAndEvaluate(event: "push-token", detail: tokenJSON)
+            }
+            return
+        }
+
+        let js = """
+        (function(){
+            try {
+                var token = \(tokenJSON);
+                if (typeof window.SPKPushReceiveToken === 'function') {
+                    return window.SPKPushReceiveToken(token) ? 'direct-ok' : 'direct-rejected';
+                }
+                window.dispatchEvent(new CustomEvent('push-token', {detail: token}));
+                return 'event-fallback';
+            } catch (e) {
+                return 'error:' + String(e);
+            }
+        })();
+        """
+
+        SirPhilipKorea.webView.evaluateJavaScript(js) { result, error in
+            if let error = error {
+                spkPushDiag("direct_token_js_error", ["error": error.localizedDescription])
+                if retry < 12 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        spkDeliverFCMTokenToWordPress(token, retry: retry + 1)
+                    }
+                } else {
+                    checkViewAndEvaluate(event: "push-token", detail: tokenJSON)
+                }
+                return
+            }
+
+            let resultText = String(describing: result ?? "")
+            spkPushDiag("direct_token_js_result", ["result": resultText, "token_length": token.count])
+
+            // If the WP bridge was not ready yet, try again briefly.
+            if resultText.contains("event-fallback") && retry < 12 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    spkDeliverFCMTokenToWordPress(token, retry: retry + 1)
+                }
+            }
+        }
+    }
+}
+
 func handleFCMToken(){
     spkPushDiag("handle_fcm_token_called")
     DispatchQueue.main.async(execute: {
@@ -170,8 +241,8 @@ func handleFCMToken(){
             } else if let token = token, !token.isEmpty {
                 print("FCM registration token: \(token)")
                 spkPushDiag("fcm_token_ready", ["token_length": token.count])
-                checkViewAndEvaluate(event: "push-token", detail: "'\(token)'")
-                spkPushDiag("push_token_event_dispatched", ["token_length": token.count])
+                spkDeliverFCMTokenToWordPress(token)
+                spkPushDiag("direct_token_delivery_started", ["token_length": token.count])
             } else {
                 spkPushDiag("fcm_token_empty")
                 checkViewAndEvaluate(event: "push-token", detail: "ERROR EMPTY TOKEN")
