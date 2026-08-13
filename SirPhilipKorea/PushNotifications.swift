@@ -243,7 +243,7 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
 
     DispatchQueue.main.async {
         guard SirPhilipKorea.webView != nil else {
-            spkPushDiag("native_ajax_webview_nil")
+            spkSendIndependentDiagnostic("token_register_webview_nil")
             return
         }
 
@@ -258,8 +258,11 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
 
         SirPhilipKorea.webView.evaluateJavaScript(configJS) { result, error in
             if let error = error {
-                spkPushDiag("native_ajax_config_js_error", ["error": error.localizedDescription])
-                if retry < 12 {
+                spkSendIndependentDiagnostic("token_register_config_js_error", [
+                    "error": error.localizedDescription,
+                    "retry": retry
+                ])
+                if retry < 16 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
                         spkRegisterFCMTokenDirectly(token, retry: retry + 1)
                     }
@@ -272,11 +275,9 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let ajax = obj["ajax"] as? String,
                   let nonce = obj["nonce"] as? String,
-                  let userId = obj["userId"] as? Int,
-                  userId > 0,
                   let url = URL(string: ajax) else {
-                spkPushDiag("native_ajax_config_not_ready", ["retry": retry])
-                if retry < 12 {
+                spkSendIndependentDiagnostic("token_register_config_not_ready", ["retry": retry])
+                if retry < 16 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
                         spkRegisterFCMTokenDirectly(token, retry: retry + 1)
                     }
@@ -288,11 +289,11 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.timeoutInterval = 15
-                request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                request.setValue("application/x-www-form-urlencoded; charset=UTF-8",
+                                 forHTTPHeaderField: "Content-Type")
                 request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-                let cookieHeader = HTTPCookie.requestHeaderFields(with: cookies)
-                for (key, value) in cookieHeader {
+                for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
 
@@ -304,88 +305,50 @@ private func spkRegisterFCMTokenDirectly(_ token: String, retry: Int = 0) {
                 ]
                 request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
-                spkPushDiag("native_ajax_post_started", [
-                    "user_id": userId,
+                spkSendIndependentDiagnostic("token_register_post_started", [
                     "cookie_count": cookies.count,
-                    "token_length": token.count
+                    "token_length": token.count,
+                    "retry": retry
                 ])
 
                 URLSession.shared.dataTask(with: request) { data, response, error in
                     if let error = error {
-                        spkPushDiag("native_ajax_post_error", ["error": error.localizedDescription])
+                        spkSendIndependentDiagnostic("token_register_post_error", [
+                            "error": error.localizedDescription,
+                            "retry": retry
+                        ])
+                        if retry < 5 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                            }
+                        }
                         return
                     }
 
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                    let success = body.contains("\"success\":true") && body.contains("\"stored\":true")
+                    let success = status == 200 &&
+                                  body.contains("\"success\":true") &&
+                                  body.contains("\"stored\":true")
 
-                    spkPushDiag(success ? "native_ajax_token_stored" : "native_ajax_token_failed", [
-                        "http_status": status,
-                        "response_length": body.count
-                    ])
-
-                    if !success && retry < 4 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                    if success {
+                        spkSendIndependentDiagnostic("token_register_stored", [
+                            "http_status": status,
+                            "token_length": token.count
+                        ])
+                    } else {
+                        spkSendIndependentDiagnostic("token_register_rejected", [
+                            "http_status": status,
+                            "response_length": body.count,
+                            "retry": retry
+                        ])
+                        if retry < 5 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                spkRegisterFCMTokenDirectly(token, retry: retry + 1)
+                            }
                         }
                     }
                 }.resume()
-            }
-        }
-    }
-}
-
-// SPK Independent Native Diagnostic v1.1.0
-// This diagnostic path intentionally does NOT depend on WKWebView, WordPress login,
-// JS bridge, cookies, or nonce. It sends only stage/error metadata, never the FCM token.
-func spkSendIndependentDiagnostic(_ stage: String, _ detail: [String: Any] = [:]) {
-    guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else { return }
-    var req = URLRequest(url: url)
-    req.httpMethod = "POST"
-    req.timeoutInterval = 12
-    req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-
-    let data = (try? JSONSerialization.data(withJSONObject: detail, options: [])) ?? Data()
-    let detailText = String(data: data, encoding: .utf8) ?? "{}"
-    var c = URLComponents()
-    c.queryItems = [
-        URLQueryItem(name: "action", value: "spk_push_native_boot_diag"),
-        URLQueryItem(name: "diag_key", value: "9q66x9_VEpPgynb0HNwiZaIwkEdZQbu1"),
-        URLQueryItem(name: "stage", value: stage),
-        URLQueryItem(name: "detail", value: detailText)
-    ]
-    req.httpBody = c.percentEncodedQuery?.data(using: .utf8)
-    URLSession.shared.dataTask(with: req).resume()
-}
-
-// SPK Push Native Diagnostic v1.0.8
-func spkSendNativeDiagnostic(_ stage: String, _ detail: [String: Any] = [:], retry: Int = 0) {
-    DispatchQueue.main.async {
-        guard SirPhilipKorea.webView != nil else { return }
-        let js = "(function(){try{return window.SPKPushNativeConfig?JSON.stringify(window.SPKPushNativeConfig):'';}catch(e){return '';}})();"
-        SirPhilipKorea.webView.evaluateJavaScript(js) { result, _ in
-            guard let cfg=result as? String, !cfg.isEmpty,
-                  let data=cfg.data(using:.utf8),
-                  let obj=try? JSONSerialization.jsonObject(with:data) as? [String:Any],
-                  let ajax=obj["ajax"] as? String, let nonce=obj["nonce"] as? String,
-                  let url=URL(string:ajax) else {
-                if retry < 12 { DispatchQueue.main.asyncAfter(deadline:.now()+0.75){ spkSendNativeDiagnostic(stage,detail,retry:retry+1) } }
-                return
-            }
-            SirPhilipKorea.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                var req=URLRequest(url:url); req.httpMethod="POST"; req.timeoutInterval=12
-                req.setValue("application/x-www-form-urlencoded; charset=UTF-8",forHTTPHeaderField:"Content-Type")
-                for (k,v) in HTTPCookie.requestHeaderFields(with:cookies){ req.setValue(v,forHTTPHeaderField:k) }
-                let dd=(try? JSONSerialization.data(withJSONObject:detail)) ?? Data()
-                let ds=String(data:dd,encoding:.utf8) ?? "{}"
-                var c=URLComponents(); c.queryItems=[
-                    URLQueryItem(name:"action",value:"spk_push_native_diag"),
-                    URLQueryItem(name:"_ajax_nonce",value:nonce),
-                    URLQueryItem(name:"stage",value:stage),
-                    URLQueryItem(name:"detail",value:ds)]
-                req.httpBody=c.percentEncodedQuery?.data(using:.utf8)
-                URLSession.shared.dataTask(with:req).resume()
             }
         }
     }
@@ -411,6 +374,9 @@ func handleFCMToken(){
 
                 // Primary v1.0.7 path: native HTTPS POST with WKWebView login cookies.
                 spkRegisterFCMTokenDirectly(token)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    spkRegisterFCMTokenDirectly(token)
+                }
                 spkPushDiag("native_ajax_registration_started", ["token_length": token.count])
 
                 // Keep v1.0.6 JS/localStorage delivery only as a compatibility fallback.
