@@ -166,6 +166,10 @@ class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteract
             
             self.overrideUIStyle()
 
+            // SPK Push Deep Link v1.0: if the app was launched from a push
+            // while WKWebView was still starting, open the saved destination now.
+            spkConsumePendingPushTargetIfPossible()
+
             // SPK Push Diagnostic/Fix v1.0.4
             // Do not depend only on JavaScript -> WKScriptMessageHandler.
             // After the main page is fully visible, ask Firebase for the token natively.

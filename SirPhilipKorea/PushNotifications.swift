@@ -300,6 +300,54 @@ func sendPushToWebView(userInfo: [AnyHashable: Any]){
     checkViewAndEvaluate(event: "push-notification", detail: json)
 }
 
+// SPK Push Deep Link v1.0
+// Keep push navigation native and generic. WordPress may change the destination
+// path later without another App Store build, as long as the URL remains on the
+// sirphilipkorea.com HTTPS origin.
+private let spkPendingPushURLKey = "spk_pending_push_url_v1"
+
+private func spkPushTargetURL(from userInfo: [AnyHashable: Any]) -> URL? {
+    var raw: String? = userInfo["url"] as? String
+
+    // Be tolerant of providers that wrap custom fields in a data dictionary.
+    if (raw == nil || raw?.isEmpty == true),
+       let data = userInfo["data"] as? [String: Any] {
+        raw = data["url"] as? String
+    }
+
+    guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty,
+          let url = URL(string: value),
+          let scheme = url.scheme?.lowercased(),
+          let host = url.host?.lowercased(),
+          scheme == "https",
+          host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com") else {
+        return nil
+    }
+    return url
+}
+
+func spkConsumePendingPushTargetIfPossible() {
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil,
+              !SirPhilipKorea.webView.isLoading else { return }
+        guard let raw = UserDefaults.standard.string(forKey: spkPendingPushURLKey),
+              let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              scheme == "https",
+              host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com") else {
+            UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
+            return
+        }
+
+        UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
+        SirPhilipKorea.webView.load(
+            URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        )
+    }
+}
+
 func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
     var json = "";
     do {
@@ -309,5 +357,14 @@ func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
         print("ERROR: userInfo parsing problem")
         return
     }
+
+    // Preserve the existing web CustomEvent for backward compatibility.
     checkViewAndEvaluate(event: "push-notification-click", detail: json)
+
+    // Also handle the URL natively. If the app was cold-started and WKWebView
+    // is not ready yet, ViewController.didFinish will consume the saved URL.
+    if let target = spkPushTargetURL(from: userInfo) {
+        UserDefaults.standard.set(target.absoluteString, forKey: spkPendingPushURLKey)
+        spkConsumePendingPushTargetIfPossible()
+    }
 }

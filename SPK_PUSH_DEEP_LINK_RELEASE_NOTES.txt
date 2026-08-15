@@ -1,0 +1,19 @@
+SPK iOS Push Deep Link Release Patch
+Date: 2026-08-15
+
+Changed:
+- PushNotifications.swift validates the custom push `url` and opens it in the existing authenticated WKWebView.
+- Cold-start notification taps persist the URL until WKWebView finishes its initial load.
+- Existing `push-notification-click` JavaScript CustomEvent remains for compatibility.
+- Only HTTPS URLs on sirphilipkorea.com (or its subdomains) are accepted.
+
+Not changed:
+- Bundle Identifier
+- Team/signing settings
+- provisioning/certificates/secrets
+- Firebase GoogleService-Info.plist
+- payment/WebView navigation logic
+
+Expected result:
+Push tap -> Sir Philip Korea iOS app -> URL sent by SPK Push Manager in the same WKWebView/session.
+Future WordPress-side destination-path changes do not require another iOS native code change.
