@@ -329,8 +329,7 @@ private func spkPushTargetURL(from userInfo: [AnyHashable: Any]) -> URL? {
 
 func spkConsumePendingPushTargetIfPossible() {
     DispatchQueue.main.async {
-        guard SirPhilipKorea.webView != nil,
-              !SirPhilipKorea.webView.isLoading else { return }
+        guard SirPhilipKorea.webView != nil else { return }
         guard let raw = UserDefaults.standard.string(forKey: spkPendingPushURLKey),
               let url = URL(string: raw),
               let scheme = url.scheme?.lowercased(),
@@ -341,6 +340,10 @@ func spkConsumePendingPushTargetIfPossible() {
             return
         }
 
+        // SPK Push Login Race Fix v1.1
+        // Do NOT wait for the initial home-page load to finish.
+        // Loading the push target immediately lets WordPress capture spk_notice
+        // before the customer can manually enter the normal login flow.
         UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
         SirPhilipKorea.webView.load(
             URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
@@ -349,6 +352,16 @@ func spkConsumePendingPushTargetIfPossible() {
 }
 
 func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
+    // Prefer the native URL path whenever the push contains a valid Sir Philip URL.
+    // This starts navigation immediately, even while the initial page is loading,
+    // so manual login and automatic login both preserve the push destination.
+    if let target = spkPushTargetURL(from: userInfo) {
+        UserDefaults.standard.set(target.absoluteString, forKey: spkPendingPushURLKey)
+        spkConsumePendingPushTargetIfPossible()
+        return
+    }
+
+    // Fallback for any legacy push that does not contain a valid URL.
     var json = "";
     do {
         let jsonData = try JSONSerialization.data(withJSONObject: userInfo)
@@ -357,14 +370,5 @@ func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
         print("ERROR: userInfo parsing problem")
         return
     }
-
-    // Preserve the existing web CustomEvent for backward compatibility.
     checkViewAndEvaluate(event: "push-notification-click", detail: json)
-
-    // Also handle the URL natively. If the app was cold-started and WKWebView
-    // is not ready yet, ViewController.didFinish will consume the saved URL.
-    if let target = spkPushTargetURL(from: userInfo) {
-        UserDefaults.standard.set(target.absoluteString, forKey: spkPendingPushURLKey)
-        spkConsumePendingPushTargetIfPossible()
-    }
 }
