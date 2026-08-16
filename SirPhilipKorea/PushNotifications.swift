@@ -311,66 +311,86 @@ func sendPushToWebView(userInfo: [AnyHashable: Any]){
 }
 
 
-// SPK Push Deep Link v1.0.1
-// Called after WKWebView finishes loading. If the web layer cached a pending
-// same-site push destination, consume it; otherwise this is a safe no-op.
-func spkConsumePendingPushTargetIfPossible() {
-    DispatchQueue.main.async {
-        guard SirPhilipKorea.webView != nil,
-              !SirPhilipKorea.webView.isHidden,
-              !SirPhilipKorea.webView.isLoading else { return }
+// SPK Push Deep Link v1.0.2
+// Native deep-link handling for notification taps.
+// The push URL is opened inside the existing WKWebView so WordPress itself can
+// redirect logged-out users to My Account/Login while preserving its normal
+// authentication/session behavior.
+private let spkPendingPushURLKey = "spk_pending_push_url_v1"
 
-        let js = """
-        (function () {
-            try {
-                var keys = ['spk_pending_push_target','spk_push_pending_target','spk_pending_push_url'];
-                var target = '', usedKey = '';
-                for (var i = 0; i < keys.length; i++) {
-                    var value = window.localStorage.getItem(keys[i]);
-                    if (value) { target = value; usedKey = keys[i]; break; }
-                }
-                if (!target) return 'no-pending-target';
-                if (usedKey) window.localStorage.removeItem(usedKey);
+private func spkPushTargetURL(from userInfo: [AnyHashable: Any]) -> URL? {
+    let candidateKeys = ["url", "click_url", "link", "target", "target_url"]
+    var raw: String? = nil
 
-                try {
-                    var parsed = JSON.parse(target);
-                    if (parsed && typeof parsed === 'object') {
-                        target = parsed.url || parsed.target || parsed.link || '';
-                    }
-                } catch (_) {}
+    for key in candidateKeys {
+        if let value = userInfo[key] as? String, !value.isEmpty {
+            raw = value
+            break
+        }
+    }
 
-                if (typeof target !== 'string' || !target) return 'invalid-pending-target';
-
-                if (target.charAt(0) === '/') {
-                    window.location.href = target;
-                    return 'opened-relative';
-                }
-
-                try {
-                    var u = new URL(target, window.location.origin);
-                    if (u.origin === window.location.origin) {
-                        window.location.href = u.href;
-                        return 'opened';
-                    }
-                } catch (_) {}
-                return 'rejected-external-target';
-            } catch (e) {
-                return 'error:' + String(e);
-            }
-        })();
-        """
-
-        SirPhilipKorea.webView.evaluateJavaScript(js) { result, error in
-            if let error = error {
-                print("[SPK Push] pending target consume error: \(error)")
-            } else {
-                print("[SPK Push] pending target consume: \(String(describing: result ?? ""))")
+    if raw == nil, let data = userInfo["data"] as? [String: Any] {
+        for key in candidateKeys {
+            if let value = data[key] as? String, !value.isEmpty {
+                raw = value
+                break
             }
         }
+    }
+
+    guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else { return nil }
+
+    // Accept same-site relative paths too.
+    let url: URL?
+    if value.hasPrefix("/") {
+        url = URL(string: value, relativeTo: URL(string: "https://sirphilipkorea.com"))
+    } else {
+        url = URL(string: value)
+    }
+
+    guard let resolved = url?.absoluteURL,
+          let scheme = resolved.scheme?.lowercased(),
+          let host = resolved.host?.lowercased(),
+          scheme == "https",
+          (host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com")) else {
+        return nil
+    }
+    return resolved
+}
+
+func spkConsumePendingPushTargetIfPossible() {
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil else { return }
+        guard let raw = UserDefaults.standard.string(forKey: spkPendingPushURLKey),
+              let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              scheme == "https",
+              (host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com")) else {
+            UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
+            return
+        }
+
+        // Remove only after we have a usable WebView and are about to navigate.
+        UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
+        SirPhilipKorea.webView.load(
+            URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        )
+        print("[SPK Push] opened pending target: \(url.absoluteString)")
     }
 }
 
 func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
+    // Prefer native navigation. This works even when the initial page is still
+    // loading and lets WordPress handle logged-out -> login -> protected page.
+    if let target = spkPushTargetURL(from: userInfo) {
+        UserDefaults.standard.set(target.absoluteString, forKey: spkPendingPushURLKey)
+        spkConsumePendingPushTargetIfPossible()
+        return
+    }
+
+    // Legacy fallback when an older notification payload has no URL.
     var json = "";
     do {
         let jsonData = try JSONSerialization.data(withJSONObject: userInfo)
