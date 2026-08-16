@@ -220,12 +220,22 @@ private func spkDeliverFCMTokenToWordPress(_ token: String, retry: Int = 0) {
 // 2) Copy the WKWebView login cookies.
 // 3) POST the FCM token directly to admin-ajax.php.
 // This does NOT depend on window.webkit.messageHandlers['push-token'].
-private var spkLastNativeRegisteredToken: String = ""
+// SPK Push Fix v1.2.1
+// IMPORTANT: An FCM token belongs to the physical app installation, not permanently
+// to one WordPress account. The same iPhone can log out from one account and log in
+// to another while Firebase keeps the exact same token.
+//
+// Therefore we MUST NOT skip registration merely because the token string is unchanged.
+// Every native registration opportunity re-sends the token with the CURRENT WKWebView
+// login cookies so WordPress can move/claim the device for the currently logged-in user.
 private var spkNativeRegistrationInFlight = false
 
 private func spkRegisterFCMTokenDirectly(_ token: String) {
     guard !token.isEmpty else { return }
-    if spkNativeRegistrationInFlight || spkLastNativeRegisteredToken == token { return }
+
+    // Prevent only simultaneous duplicate requests. Do not cache the token across
+    // page loads/account changes, because the account can change while the token does not.
+    if spkNativeRegistrationInFlight { return }
     spkNativeRegistrationInFlight = true
 
     guard let url = URL(string: "https://sirphilipkorea.com/wp-admin/admin-ajax.php") else {
@@ -266,7 +276,7 @@ private func spkRegisterFCMTokenDirectly(_ token: String) {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
                 if status == 200 && body.contains("\"success\":true") && body.contains("\"stored\":true") {
-                    spkLastNativeRegisteredToken = token
+                    print("SPK FCM token registered for the current WordPress session")
                 }
             }.resume()
         }
@@ -300,68 +310,7 @@ func sendPushToWebView(userInfo: [AnyHashable: Any]){
     checkViewAndEvaluate(event: "push-notification", detail: json)
 }
 
-// SPK Push Deep Link v1.0
-// Keep push navigation native and generic. WordPress may change the destination
-// path later without another App Store build, as long as the URL remains on the
-// sirphilipkorea.com HTTPS origin.
-private let spkPendingPushURLKey = "spk_pending_push_url_v1"
-
-private func spkPushTargetURL(from userInfo: [AnyHashable: Any]) -> URL? {
-    var raw: String? = userInfo["url"] as? String
-
-    // Be tolerant of providers that wrap custom fields in a data dictionary.
-    if (raw == nil || raw?.isEmpty == true),
-       let data = userInfo["data"] as? [String: Any] {
-        raw = data["url"] as? String
-    }
-
-    guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !value.isEmpty,
-          let url = URL(string: value),
-          let scheme = url.scheme?.lowercased(),
-          let host = url.host?.lowercased(),
-          scheme == "https",
-          host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com") else {
-        return nil
-    }
-    return url
-}
-
-func spkConsumePendingPushTargetIfPossible() {
-    DispatchQueue.main.async {
-        guard SirPhilipKorea.webView != nil else { return }
-        guard let raw = UserDefaults.standard.string(forKey: spkPendingPushURLKey),
-              let url = URL(string: raw),
-              let scheme = url.scheme?.lowercased(),
-              let host = url.host?.lowercased(),
-              scheme == "https",
-              host == "sirphilipkorea.com" || host.hasSuffix(".sirphilipkorea.com") else {
-            UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
-            return
-        }
-
-        // SPK Push Login Race Fix v1.1
-        // Do NOT wait for the initial home-page load to finish.
-        // Loading the push target immediately lets WordPress capture spk_notice
-        // before the customer can manually enter the normal login flow.
-        UserDefaults.standard.removeObject(forKey: spkPendingPushURLKey)
-        SirPhilipKorea.webView.load(
-            URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-        )
-    }
-}
-
 func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
-    // Prefer the native URL path whenever the push contains a valid Sir Philip URL.
-    // This starts navigation immediately, even while the initial page is loading,
-    // so manual login and automatic login both preserve the push destination.
-    if let target = spkPushTargetURL(from: userInfo) {
-        UserDefaults.standard.set(target.absoluteString, forKey: spkPendingPushURLKey)
-        spkConsumePendingPushTargetIfPossible()
-        return
-    }
-
-    // Fallback for any legacy push that does not contain a valid URL.
     var json = "";
     do {
         let jsonData = try JSONSerialization.data(withJSONObject: userInfo)
