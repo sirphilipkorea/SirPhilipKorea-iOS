@@ -310,6 +310,66 @@ func sendPushToWebView(userInfo: [AnyHashable: Any]){
     checkViewAndEvaluate(event: "push-notification", detail: json)
 }
 
+
+// SPK Push Deep Link v1.0.1
+// Called after WKWebView finishes loading. If the web layer cached a pending
+// same-site push destination, consume it; otherwise this is a safe no-op.
+func spkConsumePendingPushTargetIfPossible() {
+    DispatchQueue.main.async {
+        guard SirPhilipKorea.webView != nil,
+              !SirPhilipKorea.webView.isHidden,
+              !SirPhilipKorea.webView.isLoading else { return }
+
+        let js = """
+        (function () {
+            try {
+                var keys = ['spk_pending_push_target','spk_push_pending_target','spk_pending_push_url'];
+                var target = '', usedKey = '';
+                for (var i = 0; i < keys.length; i++) {
+                    var value = window.localStorage.getItem(keys[i]);
+                    if (value) { target = value; usedKey = keys[i]; break; }
+                }
+                if (!target) return 'no-pending-target';
+                if (usedKey) window.localStorage.removeItem(usedKey);
+
+                try {
+                    var parsed = JSON.parse(target);
+                    if (parsed && typeof parsed === 'object') {
+                        target = parsed.url || parsed.target || parsed.link || '';
+                    }
+                } catch (_) {}
+
+                if (typeof target !== 'string' || !target) return 'invalid-pending-target';
+
+                if (target.charAt(0) === '/') {
+                    window.location.href = target;
+                    return 'opened-relative';
+                }
+
+                try {
+                    var u = new URL(target, window.location.origin);
+                    if (u.origin === window.location.origin) {
+                        window.location.href = u.href;
+                        return 'opened';
+                    }
+                } catch (_) {}
+                return 'rejected-external-target';
+            } catch (e) {
+                return 'error:' + String(e);
+            }
+        })();
+        """
+
+        SirPhilipKorea.webView.evaluateJavaScript(js) { result, error in
+            if let error = error {
+                print("[SPK Push] pending target consume error: \(error)")
+            } else {
+                print("[SPK Push] pending target consume: \(String(describing: result ?? ""))")
+            }
+        }
+    }
+}
+
 func sendPushClickToWebView(userInfo: [AnyHashable: Any]){
     var json = "";
     do {
