@@ -4,7 +4,7 @@ import WebKit
 var webView: WKWebView! = nil
 
 class ViewController: UIViewController, WKNavigationDelegate, UIDocumentInteractionControllerDelegate {
-    // SPK Push Diagnostic v1.0.4.2
+    // SPK Push Diagnostic v1.0.6
     private func spkPushDiag(_ message: String) {
         print("[SPK Push] \(message)")
     }
